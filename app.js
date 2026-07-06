@@ -107,7 +107,7 @@ function filterByTeam(rows,team){
   return rows.filter(function(r){ return teamOf(r.rm)===team; });
 }
 function allTeams(){
-  var t={}; DATA.talk.rows.forEach(function(r){if(r.team)t[r.team]=1;});
+  var t={}; DATA.talk.rows.forEach(function(r){if(r.team&&r.team.toUpperCase()!=='B2B')t[r.team]=1;});
   return Object.keys(t).sort();
 }
 
@@ -401,9 +401,7 @@ function renderDashboard(){
   var pmsRev=sum(pms,function(r){return r.revenue;});
   var insPrem=sum(ins,function(r){return r.premium;});
   var talkRows=getTalkRows();
-  var netSaleYTD=sum(talkRows,function(r){return sum(r.netSale);});
-  var sipYTD=sum(talkRows,function(r){return sum(r.sip);});
-  var cliYTD=sum(talkRows,function(r){return sum(r.clients);});
+  var talkMonths=(DATA.talk||{}).months||[];
 
   /* ── Reconciled revenue from REVENUE REPORT (product-wise incl. Trail) ── */
   var rr=DATA.revreport;
@@ -427,23 +425,8 @@ function renderDashboard(){
       });
       tgl.appendChild(bar);
     }
-    k.appendChild(kpi(inrCr(rsum('total')),'Total Revenue · '+periodLbl,'primary'));
 
-    /* Revenue Target from REVSUM */
-    var vk=view==='ytd'?'ytd':'mtd';
-    var ot=DATA.revsum.overallTarget||{};
-    var revTarget;
-    if(state.chartTeam==='All'){
-      revTarget=vk==='ytd'?(ot.ytdTarget||0):(ot.mtdTarget||0);
-    } else {
-      var rsRows=(DATA.revsum.rows||[]).filter(function(r){return r.team===state.chartTeam;});
-      revTarget=rsRows.reduce(function(a,r){return a+(r[vk].revTarget||0);},0);
-    }
-    var achPct=revTarget?rsum('total')/revTarget:0;
-    k.appendChild(kpi(inrCr(revTarget),'Revenue Target · '+periodLbl,'red'));
-    k.appendChild(kpi(revTarget?pct(achPct):'—','% Achievement',achPct>=0.8?'green':achPct>=0.5?'yellow':'red'));
-
-    /* Product KPIs from raw sheets — MTD filters by revreport month, YTD uses all */
+    /* Product KPIs from raw sheets — computed first so Total Revenue can use them */
     var mtdMo=(rr.mtdMonth||'').toUpperCase();
     function rawByView(arr){
       var out=view==='ytd'?arr:arr.filter(function(r){return (r.month||'').toUpperCase()===mtdMo;});
@@ -451,10 +434,32 @@ function renderDashboard(){
       return out;
     }
     var dIns=rawByView(DATA.ins), dFees=rawByView(DATA.fees), dPms=rawByView(DATA.pms||[]);
-    k.appendChild(kpi(inrCr(sum(dIns,function(r){return r.revenue;})),'Insurance Revenue','blue'));
-    k.appendChild(kpi(inrCr(sum(dFees,function(r){return r.revenue;})),'FEES Revenue','green'));
-    k.appendChild(kpi(inrCr(sum(dPms,function(r){return r.revenue;})),'PMS Revenue','violet'));
-    k.appendChild(kpi(inrCr(rsum('trail')),'Trail Revenue (MF)','orange'));
+    var rawInsRev=sum(dIns,function(r){return r.revenue;});
+    var rawFeesRev=sum(dFees,function(r){return r.revenue;});
+    var rawPmsRev=sum(dPms,function(r){return r.revenue;});
+    var trailRev=rsum('trail');
+    var rawTotal=rawInsRev+rawFeesRev+rawPmsRev+trailRev;
+
+    k.appendChild(kpi(inrCr(rawTotal),'Total Revenue · '+periodLbl,'primary'));
+
+    /* Revenue Target from REVSUM */
+    var vk=view==='ytd'?'ytd':'mtd';
+    var ot=DATA.revsum.overallTarget||{};
+    var revTarget;
+    if(state.chartTeam==='All'){
+      revTarget=vk==='ytd'?(ot.mtdTarget||0)*12:(ot.mtdTarget||0);
+    } else {
+      var rsRows=(DATA.revsum.rows||[]).filter(function(r){return r.team===state.chartTeam;});
+      revTarget=rsRows.reduce(function(a,r){return a+(r[vk].revTarget||0);},0);
+    }
+    var achPct=revTarget?rawTotal/revTarget:0;
+    k.appendChild(kpi(inrCr(revTarget),'Revenue Target · '+periodLbl,'red'));
+    k.appendChild(kpi(revTarget?pct(achPct):'—','% Achievement',achPct>=0.8?'green':achPct>=0.5?'yellow':'red'));
+
+    k.appendChild(kpi(inrCr(rawInsRev),'Insurance Revenue','blue'));
+    k.appendChild(kpi(inrCr(rawFeesRev),'FEES Revenue','green'));
+    k.appendChild(kpi(inrCr(rawPmsRev),'PMS Revenue','violet'));
+    k.appendChild(kpi(inrCr(trailRev),'Trail Revenue (MF)','orange'));
     k.appendChild(kpi(numFmt(rrows.length),'RMs Reporting','cyan'));
   }else{
     /* fallback: old raw-sheet KPIs when revreport isn't in data.js */
@@ -467,9 +472,30 @@ function renderDashboard(){
   }
 
   var k2=$('dash-kpis2'); k2.innerHTML='';
-  k2.appendChild(kpi(inrCr(netSaleYTD),'Net Sale — YTD','green'));
-  k2.appendChild(kpi(inrCr(sipYTD),'SIP Book — YTD','blue'));
-  k2.appendChild(kpi(numFmt(cliYTD),'Clients Added — YTD','orange'));
+  var dView=state.dashRevView||'mtd';
+  var rrMtd=((DATA.revreport||{}).mtdMonth||'');
+  function talkMonthSum(field){
+    return talkRows.reduce(function(acc,r){
+      var arr=r[field]||[];
+      if(state.month!=='All'){
+        var idx=talkMonths.indexOf(state.month);
+        return acc+(idx>=0?(arr[idx]||0):0);
+      } else if(dView==='mtd'){
+        var idx=-1;
+        for(var i=0;i<talkMonths.length;i++){if(talkMonths[i].toUpperCase()===rrMtd.toUpperCase()){idx=i;break;}}
+        return acc+(idx>=0?(arr[idx]||0):0);
+      } else {
+        return acc+arr.reduce(function(a,v){return a+(v||0);},0);
+      }
+    },0);
+  }
+  var netSaleVal=talkMonthSum('netSale');
+  var sipVal=talkMonthSum('sip');
+  var cliVal=talkMonthSum('clients');
+  var talkLbl=state.month!=='All'?mtdLabel(state.month):dView==='mtd'?'MTD ('+rrMtd+')':'YTD';
+  k2.appendChild(kpi(inrCr(netSaleVal),'Net Sale — '+talkLbl,'green'));
+  k2.appendChild(kpi(inrCr(sipVal),'SIP Book — '+talkLbl,'blue'));
+  k2.appendChild(kpi(numFmt(cliVal),'Clients Added — '+talkLbl,'orange'));
   k2.appendChild(kpi(numFmt(talkRows.length),'Active RMs','violet'));
 
   /* monthly trend — MTD labels */
@@ -503,6 +529,9 @@ function renderDashboard(){
   addTeam(ins,'ins'); addTeam(fees,'fee'); addTeam(pms,'pms');
   var teamRows=Object.keys(tmap).map(function(k){return tmap[k];}).sort(function(a,b){return (b.ins+b.fee+b.pms)-(a.ins+a.fee+a.pms);});
   var tt=$('dash-team'); tt.innerHTML='';
+  var teamNote=el('p','table-note','Filtered by Month dropdown — '+(state.month==='All'?'All Months':mtdLabel(state.month)));
+  teamNote.style.cssText='font-size:0.75rem;color:#667;margin:0 0 0.4rem;font-style:italic;';
+  tt.appendChild(teamNote);
   tt.appendChild(buildTable([
     {label:'Team',get:function(r){return r.team;}},
     {label:'INS Rev',get:function(r){return r.ins;},fmt:inrCr,align:'right',sum:true},
