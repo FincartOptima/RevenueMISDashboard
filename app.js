@@ -5,7 +5,7 @@
 (function () {
 "use strict";
 
-var FY_SERIALS = [46113,46143,46174,46204,46235,46266,46296,46327,46357,46388,46419,46447];
+var FY_SERIALS=(function(){var d=new Date(),y=d.getMonth()>=3?d.getFullYear():d.getFullYear()-1,s=[];for(var i=0;i<12;i++){var m=(3+i)%12;s.push(Math.round((new Date(Date.UTC(y+(m<3?1:0),m,1))-new Date(Date.UTC(1899,11,30)))/86400000));}return s;})();
 var ACCENTS = ['#4f46e5','#0891b2','#059669','#ec4899','#8b5cf6','#d97706','#ef4444','#14b8a6','#f97316','#a855f7','#0ea5e9','#84cc16'];
 var MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -28,8 +28,8 @@ var state = {
    For a private repo set token to a Personal Access Token with `repo` scope.
    ──────────────────────────────────────────────────────────── */
 var GH = {
-  owner: 'DEVSINGHAL2001',
-  repo:  'DevTest',
+  owner: 'FincartOptima',
+  repo:  'RevenueMISDashboard',
   branch:'main',
   token: ''   /* optional PAT for private repo */
 };
@@ -358,7 +358,7 @@ var TABS=[
   {id:'dashboard',label:'📊 Dashboard',cls:'t-dash'},
   {id:'revsum',label:'📋 Revenue Summary V2'},
   {id:'ins',label:'🛡️ INS — Insurance'},
-  {id:'fees',label:'💰 FEES — Fin-Plan'},
+  {id:'fees',label:'💰 FEES'},
   {id:'pms',label:'📈 PMS'},
   {id:'talk',label:'📞 Talk — RM Performance'}
 ];
@@ -405,13 +405,66 @@ function renderDashboard(){
   var sipYTD=sum(talkRows,function(r){return sum(r.sip);});
   var cliYTD=sum(talkRows,function(r){return sum(r.clients);});
 
+  /* ── Reconciled revenue from REVENUE REPORT (product-wise incl. Trail) ── */
+  var rr=DATA.revreport;
   var k=$('dash-kpis'); k.innerHTML='';
-  k.appendChild(kpi(inrCr(insRev+feeRev+pmsRev),'Total Revenue (INS+FEES+PMS)','primary'));
-  k.appendChild(kpi(inrCr(insRev),'Insurance Revenue','blue'));
-  k.appendChild(kpi(inrCr(feeRev),'Fin-Plan Revenue','green'));
-  k.appendChild(kpi(inrCr(pmsRev),'PMS Revenue','violet'));
-  k.appendChild(kpi(numFmt(ins.length),'Insurance Policies','orange'));
-  k.appendChild(kpi(inrCr(insPrem),'Total Premium Booked','cyan'));
+  var tgl=$('dash-rev-toggle'); if(tgl)tgl.innerHTML='';
+  if(rr&&(rr.monthly||rr.ytd)){
+    var view=state.dashRevView||'mtd';
+    var rrows=(view==='ytd'?rr.ytd:rr.monthly)||[];
+    /* B2C, non-pool only — matches Revenue Summary V2.0 Column I grand total */
+    rrows=rrows.filter(function(r){return (r.team||'').toUpperCase()!=='B2B' && !r.pool;});
+    if(state.chartTeam!=='All') rrows=rrows.filter(function(r){return r.team===state.chartTeam;});
+    function rsum(key){return rrows.reduce(function(a,r){return a+(r[key]||0);},0);}
+    var periodLbl=view==='ytd'?'YTD':((rr.mtdMonth||'MTD')+' · MTD');
+
+    if(tgl){
+      var bar=el('div','view-bar');
+      [['mtd','📅 MTD ('+(rr.mtdMonth||'Current Month')+')'],['ytd','📆 YTD (Full Year)']].forEach(function(v){
+        var b=el('button','vbtn'+(view===v[0]?' active':''),v[1]);
+        b.onclick=function(){state.dashRevView=v[0];renderDashboard();};
+        bar.appendChild(b);
+      });
+      tgl.appendChild(bar);
+    }
+    k.appendChild(kpi(inrCr(rsum('total')),'Total Revenue · '+periodLbl,'primary'));
+
+    /* Revenue Target from REVSUM */
+    var vk=view==='ytd'?'ytd':'mtd';
+    var ot=DATA.revsum.overallTarget||{};
+    var revTarget;
+    if(state.chartTeam==='All'){
+      revTarget=vk==='ytd'?(ot.ytdTarget||0):(ot.mtdTarget||0);
+    } else {
+      var rsRows=(DATA.revsum.rows||[]).filter(function(r){return r.team===state.chartTeam;});
+      revTarget=rsRows.reduce(function(a,r){return a+(r[vk].revTarget||0);},0);
+    }
+    var achPct=revTarget?rsum('total')/revTarget:0;
+    k.appendChild(kpi(inrCr(revTarget),'Revenue Target · '+periodLbl,'red'));
+    k.appendChild(kpi(revTarget?pct(achPct):'—','% Achievement',achPct>=0.8?'green':achPct>=0.5?'yellow':'red'));
+
+    /* Product KPIs from raw sheets — MTD filters by revreport month, YTD uses all */
+    var mtdMo=(rr.mtdMonth||'').toUpperCase();
+    function rawByView(arr){
+      var out=view==='ytd'?arr:arr.filter(function(r){return (r.month||'').toUpperCase()===mtdMo;});
+      if(state.chartTeam!=='All') out=filterByTeam(out,state.chartTeam);
+      return out;
+    }
+    var dIns=rawByView(DATA.ins), dFees=rawByView(DATA.fees), dPms=rawByView(DATA.pms||[]);
+    k.appendChild(kpi(inrCr(sum(dIns,function(r){return r.revenue;})),'Insurance Revenue','blue'));
+    k.appendChild(kpi(inrCr(sum(dFees,function(r){return r.revenue;})),'FEES Revenue','green'));
+    k.appendChild(kpi(inrCr(sum(dPms,function(r){return r.revenue;})),'PMS Revenue','violet'));
+    k.appendChild(kpi(inrCr(rsum('trail')),'Trail Revenue (MF)','orange'));
+    k.appendChild(kpi(numFmt(rrows.length),'RMs Reporting','cyan'));
+  }else{
+    /* fallback: old raw-sheet KPIs when revreport isn't in data.js */
+    k.appendChild(kpi(inrCr(insRev+feeRev+pmsRev),'Total Revenue (INS+FEES+PMS)','primary'));
+    k.appendChild(kpi(inrCr(insRev),'Insurance Revenue','blue'));
+    k.appendChild(kpi(inrCr(feeRev),'FEES Revenue','green'));
+    k.appendChild(kpi(inrCr(pmsRev),'PMS Revenue','violet'));
+    k.appendChild(kpi(numFmt(ins.length),'Insurance Policies','orange'));
+    k.appendChild(kpi(inrCr(insPrem),'Total Premium Booked','cyan'));
+  }
 
   var k2=$('dash-kpis2'); k2.innerHTML='';
   k2.appendChild(kpi(inrCr(netSaleYTD),'Net Sale — YTD','green'));
@@ -424,11 +477,20 @@ function renderDashboard(){
     [].concat(ins.map(function(r){return r.month;}),fees.map(function(r){return r.month;}),pms.map(function(r){return r.month;}))
   );
   function msum(arr,m){return arr.filter(function(r){return r.month===m;}).reduce(function(a,r){return a+r.revenue;},0);}
-  drawBar('dash-trend',allMonths.map(mtdLabel),[
+  drawBar('dash-trend-total',allMonths.map(mtdLabel),[
     {label:'Insurance',data:allMonths.map(function(m){return msum(ins,m);}),backgroundColor:ACCENTS[0]},
-    {label:'Fin-Plan',data:allMonths.map(function(m){return msum(fees,m);}),backgroundColor:ACCENTS[1]},
+    {label:'FEES',data:allMonths.map(function(m){return msum(fees,m);}),backgroundColor:ACCENTS[1]},
     {label:'PMS',data:allMonths.map(function(m){return msum(pms,m);}),backgroundColor:ACCENTS[2]}
-  ],{stacked:true,money:true,datalabels:false});
+  ],{money:true,datalabels:false,stacked:true});
+  drawBar('dash-trend-ins',allMonths.map(mtdLabel),[
+    {label:'Insurance',data:allMonths.map(function(m){return msum(ins,m);}),backgroundColor:ACCENTS[0]}
+  ],{money:true,datalabels:false});
+  drawBar('dash-trend-fees',allMonths.map(mtdLabel),[
+    {label:'FEES',data:allMonths.map(function(m){return msum(fees,m);}),backgroundColor:ACCENTS[1]}
+  ],{money:true,datalabels:false});
+  drawBar('dash-trend-pms',allMonths.map(mtdLabel),[
+    {label:'PMS',data:allMonths.map(function(m){return msum(pms,m);}),backgroundColor:ACCENTS[2]}
+  ],{money:true,datalabels:false});
 
   /* team table */
   var tmap={};
@@ -589,31 +651,129 @@ function renderINS(){
   else insRawView(pane,ins);
 }
 
-function insRmView(pane,ins,totalRev){
-  var byRM=pivot(ins,function(r){return r.rm;},{rev:function(r){return r.revenue;},prem:function(r){return r.premium;}}).sort(byRev);
-  var top=byRM.slice(0,15); var tot=totalRev||1;
+/* assign a fixed revenue rank (1 = highest) to each pivot row, so the #
+   column stays put no matter how the table is later re-sorted */
+function assignRevRank(byRM){
+  byRM.slice().sort(byRev).forEach(function(r,i){r._rank=i+1;});
+  return byRM;
+}
+/* Revenue-by-Team bar chart, shared by INS / FEES / PMS RM Analysis */
+function teamRevChart(pane,rows,canvasId,barCls){
+  var byTeam=pivot(rows,function(r){return teamOf(r.rm);},{rev:function(r){return r.revenue;}}).sort(byRev);
+  var s=sect('Revenue by Team',barCls,canvasId);
+  s.appendChild(cw(canvasId,300)); pane.appendChild(s);
+  drawBar(canvasId,byTeam.map(function(r){return r.key;}),[
+    {label:'Revenue',data:byTeam.map(function(r){return r.rev;}),
+     backgroundColor:byTeam.map(function(_,i){return ACCENTS[i%ACCENTS.length];})}
+  ],{money:true,legend:false,countData:byTeam.map(function(r){return r._count;})});
+}
 
-  var s1=sect('Top 15 RMs by Revenue','bar-orange','ins-rm-chart');
+function insRmView(pane,ins,totalRev){
+  var byRM=assignRevRank(pivot(ins,function(r){return r.rm;},{rev:function(r){return r.revenue;},prem:function(r){return r.premium;}}));
+  var tot=totalRev||1;
+  var teamSel=state.chartTeam;
+
+  /* chart always ranked by Revenue (desc); title reflects team filter */
+  var byRev15=byRM.slice().sort(byRev).slice(0,15);
+  var chartTitle=(teamSel&&teamSel!=='All')
+    ? 'RM Rankings — '+teamSel
+    : 'Top 15 RMs by Revenue';
+  var s1=sect(chartTitle,'bar-orange','ins-rm-chart');
   s1.appendChild(cw('ins-rm-chart',420));
   pane.appendChild(s1);
-  drawHBar('ins-rm-chart',top.map(function(r){return r.key;}),[
-    {label:'Revenue',data:top.map(function(r){return r.rev;}),backgroundColor:ACCENTS[0]},
-    {label:'Premium',data:top.map(function(r){return r.prem;}),backgroundColor:ACCENTS[1]}
+  drawHBar('ins-rm-chart',byRev15.map(function(r){return r.key;}),[
+    {label:'Revenue',data:byRev15.map(function(r){return r.rev;}),backgroundColor:ACCENTS[0]},
+    {label:'Premium',data:byRev15.map(function(r){return r.prem;}),backgroundColor:ACCENTS[1]}
   ],{money:true});
+
+  /* revenue by team */
+  teamRevChart(pane,ins,'ins-team-chart','bar-green');
+
+  /* full list — sortable columns (click header to toggle asc/desc) */
+  if(!state.insRmSort) state.insRmSort={col:'rev',dir:-1};
+  var ss=state.insRmSort;
+  var sorted=byRM.slice().sort(function(a,b){
+    var va,vb;
+    if(ss.col==='rm'){ va=(a.key||'').toLowerCase(); vb=(b.key||'').toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
+    if(ss.col==='team'){ va=teamOf(a.key).toLowerCase(); vb=teamOf(b.key).toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
+    if(ss.col==='count'){ va=a._count; vb=b._count; }
+    else if(ss.col==='prem'){ va=a.prem; vb=b.prem; }
+    else if(ss.col==='avg'){ va=avg(a.rev,a._count); vb=avg(b.rev,b._count); }
+    else { va=a.rev; vb=b.rev; }   /* rev, pct */
+    return (va-vb)*ss.dir;
+  });
 
   var s2=sect('RM Rankings — Full List','bar-blue','ins-rm-table');
   var tw=el('div','table-wrap tall');
   tw.appendChild(buildTable([
-    {label:'#',   get:function(r,i){return i+1;},align:'right',isRank:true},
-    {label:'RM',  get:function(r){return r.key;}},
-    {label:'Team',get:function(r){return teamOf(r.key);}},
-    {label:'Policies',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
-    {label:'Premium',get:function(r){return r.prem;},fmt:inr,align:'right',sum:true},
-    {label:'Revenue',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
-    {label:'% Total',get:function(r){return r.rev/tot;},fmt:pct,align:'right'},
-    {label:'Avg/Policy',get:function(r){return avg(r.rev,r._count);},fmt:inr,align:'right'}
-  ],byRM,{grand:true,heat:5}));
+    {label:'#',   get:function(r){return r._rank;},align:'right',isRank:true},
+    {label:'RM',  sortKey:'rm',   get:function(r){return r.key;}},
+    {label:'Team',sortKey:'team', get:function(r){return teamOf(r.key);}},
+    {label:'Policies',sortKey:'count',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
+    {label:'Premium',sortKey:'prem',get:function(r){return r.prem;},fmt:inr,align:'right',sum:true},
+    {label:'Revenue',sortKey:'rev',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
+    {label:'% Total',sortKey:'pct',get:function(r){return r.rev/tot;},fmt:pct,align:'right'},
+    {label:'Avg/Policy',sortKey:'avg',get:function(r){return avg(r.rev,r._count);},fmt:inr,align:'right'}
+  ],sorted,{grand:true,heat:5,
+    sortState:{col:ss.col,dir:ss.dir},
+    onSort:function(k){
+      if(state.insRmSort.col===k) state.insRmSort.dir*=-1;
+      else state.insRmSort={col:k,dir:-1};
+      renderINS();
+    }
+  }));
   s2.appendChild(tw); pane.appendChild(s2);
+
+  /* ── Insurance Product Mix — team-wise or RM-wise ── */
+  insProductMix(pane,ins,teamSel);
+}
+
+function insProductMix(pane,ins,teamSel){
+  var isTeamView=(!teamSel||teamSel==='All');
+  var title=isTeamView?'Insurance Product Mix — by Team':'Insurance Product Mix — '+teamSel+' (RM-wise)';
+  var s=sect(title,'bar-cyan','ins-product-mix');
+  var tw=el('div','table-wrap tall');
+
+  if(isTeamView){
+    var map={};
+    ins.forEach(function(r){
+      var team=teamOf(r.rm); var it=r.insType||'Unknown';
+      var k=team+'|||'+it;
+      if(!map[k]) map[k]={team:team,insType:it,count:0,prem:0};
+      map[k].count++; map[k].prem+=r.premium;
+    });
+    var rows=Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){
+      var tc=a.team.localeCompare(b.team); if(tc!==0)return tc;
+      return b.prem-a.prem;
+    });
+    tw.appendChild(buildTable([
+      {label:'Team',get:function(r){return r.team;}},
+      {label:'Insurance Type',get:function(r){return r.insType;}},
+      {label:'Policies',get:function(r){return r.count;},fmt:numFmt,align:'right',sum:true},
+      {label:'Total Premium',get:function(r){return r.prem;},fmt:inr,align:'right',sum:true},
+      {label:'Avg Premium/Client',get:function(r){return avg(r.prem,r.count);},fmt:inr,align:'right'}
+    ],rows,{grand:true,heat:3}));
+  }else{
+    var map2={};
+    ins.forEach(function(r){
+      var rm=r.rm||'Unknown'; var it=r.insType||'Unknown';
+      var k=rm+'|||'+it;
+      if(!map2[k]) map2[k]={rm:rm,insType:it,count:0,prem:0};
+      map2[k].count++; map2[k].prem+=r.premium;
+    });
+    var rows2=Object.keys(map2).map(function(k){return map2[k];}).sort(function(a,b){
+      var rc=a.rm.localeCompare(b.rm); if(rc!==0)return rc;
+      return b.prem-a.prem;
+    });
+    tw.appendChild(buildTable([
+      {label:'RM',get:function(r){return r.rm;}},
+      {label:'Insurance Type',get:function(r){return r.insType;}},
+      {label:'Policies',get:function(r){return r.count;},fmt:numFmt,align:'right',sum:true},
+      {label:'Total Premium',get:function(r){return r.prem;},fmt:inr,align:'right',sum:true},
+      {label:'Avg Premium/Client',get:function(r){return avg(r.prem,r.count);},fmt:inr,align:'right'}
+    ],rows2,{grand:true,heat:3}));
+  }
+  s.appendChild(tw); pane.appendChild(s);
 }
 
 /* Product Breakdown — only Insurance Category chart with count in tooltip */
@@ -658,12 +818,49 @@ function insPartnerView(pane,ins,totalRev){
   pane.appendChild(g);
 }
 
-function insMonthlyView(pane,ins){
-  var months=uniqInFyOrder(ins.map(function(r){return r.month;}));
-  function mrev(m){return sum(ins.filter(function(r){return r.month===m;}),function(r){return r.revenue;});}
-  function mprem(m){return sum(ins.filter(function(r){return r.month===m;}),function(r){return r.premium;});}
+/* ── Shared MTD day-window helpers (INS / FEES / PMS Monthly Trend) ── */
+function dayWindowBar(prefix){
+  var sK=prefix+'MtdStart', eK=prefix+'MtdEnd';
+  if(state[sK]==null) state[sK]=1;
+  if(state[eK]==null) state[eK]=31;
+  var render={ins:renderINS,fees:renderFEES,pms:renderPMS}[prefix];
+  var fbar=el('div','section bar-teal');
+  fbar.appendChild(el('h2',null,'Day Window — MTD by Create Date'));
+  var ctr=el('div','filters'); ctr.style.marginTop='8px';
+  ctr.appendChild(el('label',null,'Day'));
+  var inS=el('input'); inS.type='number'; inS.min=1; inS.max=31; inS.value=state[sK]; inS.style.width='70px';
+  ctr.appendChild(inS);
+  ctr.appendChild(el('span',null,'<span style="color:var(--muted);padding:0 4px">to</span>'));
+  var inE=el('input'); inE.type='number'; inE.min=1; inE.max=31; inE.value=state[eK]; inE.style.width='70px';
+  ctr.appendChild(inE);
+  ctr.appendChild(el('span',null,'<span style="color:var(--muted);font-size:12px;margin-left:10px">Compares the same day range across every month (by Create Date)</span>'));
+  inS.onchange=function(){state[sK]=Math.max(1,Math.min(31,parseInt(this.value,10)||1)); render();};
+  inE.onchange=function(){state[eK]=Math.max(1,Math.min(31,parseInt(this.value,10)||31)); render();};
+  fbar.appendChild(ctr);
+  return fbar;
+}
+function applyDayWindow(rows,prefix){
+  var sd=state[prefix+'MtdStart']||1, ed=state[prefix+'MtdEnd']||31;
+  var win=rows.filter(function(r){
+    var cd=r.createDate||'';
+    if(cd.length<10) return false;
+    var day=parseInt(cd.substring(8,10),10);
+    return day>=sd && day<=ed;
+  });
+  return {rows:win, days:(ed-sd+1)||1};
+}
 
-  var s1=sect('Monthly Insurance Revenue','bar-blue','ins-monthly-chart');
+function insMonthlyView(pane,ins){
+  pane.appendChild(dayWindowBar('ins'));
+  var w=applyDayWindow(ins,'ins');
+  var win=w.rows;
+  var sd=state.insMtdStart, ed=state.insMtdEnd;
+
+  var months=uniqInFyOrder(win.map(function(r){return r.month;}));
+  function mrev(m){return sum(win.filter(function(r){return r.month===m;}),function(r){return r.revenue;});}
+  function mprem(m){return sum(win.filter(function(r){return r.month===m;}),function(r){return r.premium;});}
+
+  var s1=sect('Monthly Insurance Revenue (Day '+sd+'–'+ed+')','bar-blue','ins-monthly-chart');
   s1.appendChild(cw('ins-monthly-chart',320)); pane.appendChild(s1);
   drawBar('ins-monthly-chart',months.map(mtdLabel),[
     {label:'Revenue',data:months.map(mrev),backgroundColor:ACCENTS[0]},
@@ -671,7 +868,7 @@ function insMonthlyView(pane,ins){
   ],{money:true});
 
   var g=el('div','grid cols-2');
-  var byMonth=fyOrder(pivot(ins,function(r){return r.month;},{rev:function(r){return r.revenue;},prem:function(r){return r.premium;}}));
+  var byMonth=fyOrder(pivot(win,function(r){return r.month;},{rev:function(r){return r.revenue;},prem:function(r){return r.premium;}}));
   var sm=sect('Monthly Breakdown','bar-green','ins-monthly-table');
   var tmw=el('div','table-wrap');
   tmw.appendChild(buildTable([
@@ -682,8 +879,8 @@ function insMonthlyView(pane,ins){
   ],byMonth,{grand:true}));
   sm.appendChild(tmw); g.appendChild(sm);
 
-  var byStatus=pivot(ins,function(r){return r.status;},{rev:function(r){return r.revenue;}}).sort(byRev);
-  var tot=sum(ins,function(r){return r.revenue;})||1;
+  var byStatus=pivot(win,function(r){return r.status;},{rev:function(r){return r.revenue;}}).sort(byRev);
+  var tot=sum(win,function(r){return r.revenue;})||1;
   var ss=sect('Status Distribution','bar-orange','ins-status-table');
   var tw2=el('div','table-wrap'); tw2.appendChild(revShareTable(byStatus,tot)); ss.appendChild(tw2); g.appendChild(ss);
   pane.appendChild(g);
@@ -981,28 +1178,56 @@ function renderFEES(){
 }
 
 function feesRmView(pane,fees,totalRev){
-  var byRM=pivot(fees,function(r){return r.rm;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}).sort(byRev);
-  var top=byRM.slice(0,15); var tot=totalRev||1;
+  var byRM=assignRevRank(pivot(fees,function(r){return r.rm;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}));
+  var tot=totalRev||1;
+  var teamSel=state.chartTeam;
 
-  var s1=sect('Top 15 RMs by Fee Revenue','bar-orange','fees-rm-chart');
+  /* chart always ranked by Revenue (desc); title reflects team filter */
+  var byRev15=byRM.slice().sort(byRev).slice(0,15);
+  var chartTitle=(teamSel&&teamSel!=='All') ? 'RM Rankings — '+teamSel : 'Top 15 RMs by Fee Revenue';
+  var s1=sect(chartTitle,'bar-orange','fees-rm-chart');
   s1.appendChild(cw('fees-rm-chart',420)); pane.appendChild(s1);
-  drawHBar('fees-rm-chart',top.map(function(r){return r.key;}),[
-    {label:'Net Revenue',data:top.map(function(r){return r.rev;}),backgroundColor:ACCENTS[2]},
-    {label:'Gross Amount',data:top.map(function(r){return r.amt;}),backgroundColor:ACCENTS[1]}
+  drawHBar('fees-rm-chart',byRev15.map(function(r){return r.key;}),[
+    {label:'Net Revenue',data:byRev15.map(function(r){return r.rev;}),backgroundColor:ACCENTS[2]},
+    {label:'Gross Amount',data:byRev15.map(function(r){return r.amt;}),backgroundColor:ACCENTS[1]}
   ],{money:true});
+
+  /* revenue by team */
+  teamRevChart(pane,fees,'fees-team-chart','bar-green');
+
+  /* full list — sortable columns */
+  if(!state.feesRmSort) state.feesRmSort={col:'rev',dir:-1};
+  var ss=state.feesRmSort;
+  var sorted=byRM.slice().sort(function(a,b){
+    var va,vb;
+    if(ss.col==='rm'){ va=(a.key||'').toLowerCase(); vb=(b.key||'').toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
+    if(ss.col==='team'){ va=teamOf(a.key).toLowerCase(); vb=teamOf(b.key).toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
+    if(ss.col==='count'){ va=a._count; vb=b._count; }
+    else if(ss.col==='amt'){ va=a.amt; vb=b.amt; }
+    else if(ss.col==='avg'){ va=avg(a.rev,a._count); vb=avg(b.rev,b._count); }
+    else { va=a.rev; vb=b.rev; }   /* rev, pct */
+    return (va-vb)*ss.dir;
+  });
 
   var s2=sect('RM Rankings — Full List','bar-blue','fees-rm-table');
   var tw=el('div','table-wrap tall');
   tw.appendChild(buildTable([
-    {label:'#',   get:function(r,i){return i+1;},align:'right',isRank:true},
-    {label:'RM',  get:function(r){return r.key;}},
-    {label:'Team',get:function(r){return teamOf(r.key);}},
-    {label:'Txns',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
-    {label:'Gross',get:function(r){return r.amt;},fmt:inr,align:'right',sum:true},
-    {label:'Net Revenue',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
-    {label:'% Total',get:function(r){return r.rev/tot;},fmt:pct,align:'right'},
-    {label:'Avg/Txn',get:function(r){return avg(r.rev,r._count);},fmt:inr,align:'right'}
-  ],byRM,{grand:true,heat:5}));
+    {label:'#',   get:function(r){return r._rank;},align:'right',isRank:true},
+    {label:'RM',  sortKey:'rm',   get:function(r){return r.key;}},
+    {label:'Team',sortKey:'team', get:function(r){return teamOf(r.key);}},
+    {label:'Txns',sortKey:'count',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
+    {label:'Gross',sortKey:'amt', get:function(r){return r.amt;},fmt:inr,align:'right',sum:true},
+    {label:'Net Revenue',sortKey:'rev',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
+    {label:'% Total',sortKey:'pct',get:function(r){return r.rev/tot;},fmt:pct,align:'right'},
+    {label:'Avg/Txn',sortKey:'avg',get:function(r){return avg(r.rev,r._count);},fmt:inr,align:'right'}
+  ],sorted,{grand:true,heat:5,
+    sortState:{col:ss.col,dir:ss.dir},
+    onSort:function(k){
+      if(state.feesRmSort.col===k) state.feesRmSort.dir*=-1;
+      else state.feesRmSort={col:k,dir:-1};
+      renderFEES();
+    }
+  }));
   s2.appendChild(tw); pane.appendChild(s2);
 }
 
@@ -1030,18 +1255,23 @@ function feesProductView(pane,fees,totalRev){
 }
 
 function feesMonthlyView(pane,fees){
-  var months=uniqInFyOrder(fees.map(function(r){return r.month;}));
-  function msum(m){return sum(fees.filter(function(r){return r.month===m;}),function(r){return r.revenue;});}
-  function asum(m){return sum(fees.filter(function(r){return r.month===m;}),function(r){return r.amount;});}
+  pane.appendChild(dayWindowBar('fees'));
+  var w=applyDayWindow(fees,'fees');
+  var win=w.rows;
+  var sd=state.feesMtdStart, ed=state.feesMtdEnd;
 
-  var s1=sect('Monthly Fee Revenue Trend','bar-blue','fees-monthly-chart');
+  var months=uniqInFyOrder(win.map(function(r){return r.month;}));
+  function msum(m){return sum(win.filter(function(r){return r.month===m;}),function(r){return r.revenue;});}
+  function asum(m){return sum(win.filter(function(r){return r.month===m;}),function(r){return r.amount;});}
+
+  var s1=sect('Monthly Fee Revenue Trend (Day '+sd+'–'+ed+')','bar-blue','fees-monthly-chart');
   s1.appendChild(cw('fees-monthly-chart',300)); pane.appendChild(s1);
   drawBar('fees-monthly-chart',months.map(mtdLabel),[
     {label:'Net Revenue',data:months.map(msum),backgroundColor:ACCENTS[2]},
     {label:'Gross Amount',data:months.map(asum),backgroundColor:ACCENTS[1]}
   ],{money:true});
 
-  var byMonth=fyOrder(pivot(fees,function(r){return r.month;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}));
+  var byMonth=fyOrder(pivot(win,function(r){return r.month;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}));
   var s2=sect('Monthly Breakdown','bar-green','fees-monthly-table');
   var tw=el('div','table-wrap');
   tw.appendChild(buildTable([
@@ -1122,28 +1352,56 @@ function renderPMS(){
 }
 
 function pmsRmView(pane,pms,totalRev){
-  var byRM=pivot(pms,function(r){return r.rm;},{rev:function(r){return r.revenue;},inv:function(r){return r.punchAmount;}}).sort(byRev);
-  var top=byRM.slice(0,15); var tot=totalRev||1;
+  var byRM=assignRevRank(pivot(pms,function(r){return r.rm;},{rev:function(r){return r.revenue;},inv:function(r){return r.punchAmount;}}));
+  var tot=totalRev||1;
+  var teamSel=state.chartTeam;
 
-  var s1=sect('Top 15 RMs by PMS Revenue','bar-violet','pms-rm-chart');
+  /* chart always ranked by Revenue (desc); title reflects team filter */
+  var byRev15=byRM.slice().sort(byRev).slice(0,15);
+  var chartTitle=(teamSel&&teamSel!=='All') ? 'RM Rankings — '+teamSel : 'Top 15 RMs by PMS Revenue';
+  var s1=sect(chartTitle,'bar-violet','pms-rm-chart');
   s1.appendChild(cw('pms-rm-chart',420)); pane.appendChild(s1);
-  drawHBar('pms-rm-chart',top.map(function(r){return r.key;}),[
-    {label:'Revenue',data:top.map(function(r){return r.rev;}),backgroundColor:ACCENTS[4]},
-    {label:'Investment',data:top.map(function(r){return r.inv;}),backgroundColor:ACCENTS[1]}
+  drawHBar('pms-rm-chart',byRev15.map(function(r){return r.key;}),[
+    {label:'Revenue',data:byRev15.map(function(r){return r.rev;}),backgroundColor:ACCENTS[4]},
+    {label:'Investment',data:byRev15.map(function(r){return r.inv;}),backgroundColor:ACCENTS[1]}
   ],{money:true});
+
+  /* revenue by team */
+  teamRevChart(pane,pms,'pms-team-chart','bar-green');
+
+  /* full list — sortable columns */
+  if(!state.pmsRmSort) state.pmsRmSort={col:'rev',dir:-1};
+  var ss=state.pmsRmSort;
+  var sorted=byRM.slice().sort(function(a,b){
+    var va,vb;
+    if(ss.col==='rm'){ va=(a.key||'').toLowerCase(); vb=(b.key||'').toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
+    if(ss.col==='team'){ va=teamOf(a.key).toLowerCase(); vb=teamOf(b.key).toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
+    if(ss.col==='count'){ va=a._count; vb=b._count; }
+    else if(ss.col==='inv'){ va=a.inv; vb=b.inv; }
+    else if(ss.col==='avg'){ va=avg(a.rev,a._count); vb=avg(b.rev,b._count); }
+    else { va=a.rev; vb=b.rev; }   /* rev, pct */
+    return (va-vb)*ss.dir;
+  });
 
   var s2=sect('RM Rankings — Full List','bar-blue','pms-rm-table');
   var tw=el('div','table-wrap tall');
   tw.appendChild(buildTable([
-    {label:'#',   get:function(r,i){return i+1;},align:'right',isRank:true},
-    {label:'RM',  get:function(r){return r.key;}},
-    {label:'Team',get:function(r){return teamOf(r.key);}},
-    {label:'Txns',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
-    {label:'Investment',get:function(r){return r.inv;},fmt:inr,align:'right',sum:true},
-    {label:'Revenue',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
-    {label:'% Total',get:function(r){return r.rev/tot;},fmt:pct,align:'right'},
-    {label:'Avg/Txn',get:function(r){return avg(r.rev,r._count);},fmt:inr,align:'right'}
-  ],byRM,{grand:true,heat:5}));
+    {label:'#',   get:function(r){return r._rank;},align:'right',isRank:true},
+    {label:'RM',  sortKey:'rm',   get:function(r){return r.key;}},
+    {label:'Team',sortKey:'team', get:function(r){return teamOf(r.key);}},
+    {label:'Txns',sortKey:'count',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
+    {label:'Investment',sortKey:'inv',get:function(r){return r.inv;},fmt:inr,align:'right',sum:true},
+    {label:'Revenue',sortKey:'rev',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
+    {label:'% Total',sortKey:'pct',get:function(r){return r.rev/tot;},fmt:pct,align:'right'},
+    {label:'Avg/Txn',sortKey:'avg',get:function(r){return avg(r.rev,r._count);},fmt:inr,align:'right'}
+  ],sorted,{grand:true,heat:5,
+    sortState:{col:ss.col,dir:ss.dir},
+    onSort:function(k){
+      if(state.pmsRmSort.col===k) state.pmsRmSort.dir*=-1;
+      else state.pmsRmSort={col:k,dir:-1};
+      renderPMS();
+    }
+  }));
   s2.appendChild(tw); pane.appendChild(s2);
 }
 
@@ -1182,11 +1440,16 @@ function pmsAssetView(pane,pms,totalRev){
 }
 
 function pmsMonthlyView(pane,pms){
-  var months=uniqInFyOrder(pms.map(function(r){return r.month;}));
-  function mrev(m){return sum(pms.filter(function(r){return r.month===m;}),function(r){return r.revenue;});}
-  function minv(m){return sum(pms.filter(function(r){return r.month===m;}),function(r){return r.punchAmount;});}
+  pane.appendChild(dayWindowBar('pms'));
+  var w=applyDayWindow(pms,'pms');
+  var win=w.rows;
+  var sd=state.pmsMtdStart, ed=state.pmsMtdEnd;
 
-  var s1=sect('Monthly PMS Revenue & Investment','bar-violet','pms-monthly-chart');
+  var months=uniqInFyOrder(win.map(function(r){return r.month;}));
+  function mrev(m){return sum(win.filter(function(r){return r.month===m;}),function(r){return r.revenue;});}
+  function minv(m){return sum(win.filter(function(r){return r.month===m;}),function(r){return r.punchAmount;});}
+
+  var s1=sect('Monthly PMS Revenue & Investment (Day '+sd+'–'+ed+')','bar-violet','pms-monthly-chart');
   s1.appendChild(cw('pms-monthly-chart',320)); pane.appendChild(s1);
   drawBar('pms-monthly-chart',months.map(mtdLabel),[
     {label:'Revenue',data:months.map(mrev),backgroundColor:ACCENTS[4]},
@@ -1194,7 +1457,7 @@ function pmsMonthlyView(pane,pms){
   ],{money:true});
 
   var g=el('div','grid cols-2');
-  var byMonth=fyOrder(pivot(pms,function(r){return r.month;},{rev:function(r){return r.revenue;},inv:function(r){return r.punchAmount;}}));
+  var byMonth=fyOrder(pivot(win,function(r){return r.month;},{rev:function(r){return r.revenue;},inv:function(r){return r.punchAmount;}}));
   var s2=sect('Monthly Breakdown','bar-green','pms-monthly-table');
   var tw=el('div','table-wrap');
   tw.appendChild(buildTable([
@@ -1205,8 +1468,8 @@ function pmsMonthlyView(pane,pms){
   ],byMonth,{grand:true}));
   s2.appendChild(tw); g.appendChild(s2);
 
-  var byStatus=pivot(pms,function(r){return r.confirmed;},{rev:function(r){return r.revenue;}}).sort(byRev);
-  var tot=sum(pms,function(r){return r.revenue;})||1;
+  var byStatus=pivot(win,function(r){return r.confirmed;},{rev:function(r){return r.revenue;}}).sort(byRev);
+  var tot=sum(win,function(r){return r.revenue;})||1;
   var s3=sect('Confirmation Status','bar-orange','pms-confstatus-table');
   var tw2=el('div','table-wrap'); tw2.appendChild(revShareTable(byStatus,tot)); s3.appendChild(tw2); g.appendChild(s3);
   pane.appendChild(g);
@@ -1508,6 +1771,17 @@ function fyFromMtdMonth(mtd){
 
 function cell(row,i){return (row&&i<row.length)?row[i]:null;}
 function sstr(v){ if(v==null)return ''; if(typeof v==='number'&&v%1===0)return ''+v; return (''+v).trim(); }
+function serToIsoDate(v){
+  if(v==null||v==='')return '';
+  function p2(n){return (n<10?'0':'')+n;}
+  if(typeof v==='number'){
+    var d=new Date(Date.UTC(1899,11,30)+Math.round(v)*86400000);
+    return d.getUTCFullYear()+'-'+p2(d.getUTCMonth()+1)+'-'+p2(d.getUTCDate());
+  }
+  var dt=new Date((''+v).trim());
+  if(!isNaN(dt.getTime()))return dt.getFullYear()+'-'+p2(dt.getMonth()+1)+'-'+p2(dt.getDate());
+  return (''+v).trim();
+}
 function titleCase(s){return s?s.charAt(0).toUpperCase()+s.slice(1).toLowerCase():'';}
 function talktimeHours(v){
   if(v==null)return 0;
@@ -1527,37 +1801,37 @@ function parseWorkbook(wb){
 
   /* INS — skip rows outside current FY */
   var I=sheet('INS');
-  for(var i=1;i<I.length;i++){var r=I[i];if(!r||cell(r,0)==null||cell(r,0)==='')continue;
-    if(sstr(cell(r,1))!=='B2C')continue;
+  for(var i=1;i<I.length;i++){var r=I[i];if(!r||cell(r,2)==null||cell(r,2)==='')continue;
+    if((sstr(cell(r,1))||'').toUpperCase()==='B2B')continue;
     var mo=sstr(cell(r,48)); if(mo&&fyM.indexOf(mo)<0)continue;
-    ins.push({dtype:sstr(cell(r,1)),rm:sstr(cell(r,2)),client:sstr(cell(r,3)),
+    ins.push({dtype:sstr(cell(r,1))||'B2C',rm:sstr(cell(r,2)),client:sstr(cell(r,3)),
       platform:sstr(cell(r,8))||'Unknown',category:sstr(cell(r,10))||'Unknown',insType:sstr(cell(r,11))||'Unknown',
-      partner:sstr(cell(r,14))||'Unknown',premium:num(cell(r,27)),month:mo,confirmed:sstr(cell(r,50)),
+      partner:sstr(cell(r,14))||'Unknown',premium:num(cell(r,27)),createDate:serToIsoDate(cell(r,47)),month:mo,confirmed:sstr(cell(r,50)),
       type:sstr(cell(r,51))||'Unknown',revenue:num(cell(r,52)),pct:num(cell(r,54)),
       teamLeader:sstr(cell(r,56)),status:sstr(cell(r,63))||'Unknown'});}
 
   /* FEES — skip rows outside current FY */
   var F=sheet('FEES');
-  for(i=1;i<F.length;i++){var fr=F[i];if(!fr||cell(fr,0)==null||cell(fr,0)==='')continue;
-    if(sstr(cell(fr,1))!=='B2C')continue;
+  for(i=1;i<F.length;i++){var fr=F[i];if(!fr||cell(fr,2)==null||cell(fr,2)==='')continue;
+    if((sstr(cell(fr,1))||'').toUpperCase()==='B2B')continue;
     var fmo=sstr(cell(fr,29)); fmo=fmo?fmo.charAt(0).toUpperCase()+fmo.slice(1).toLowerCase():'';
     if(fmo&&fyM.indexOf(fmo)<0)continue;
-    fees.push({dtype:sstr(cell(fr,1)),rm:sstr(cell(fr,2)),client:sstr(cell(fr,3)),
+    fees.push({dtype:sstr(cell(fr,1))||'B2C',rm:sstr(cell(fr,2)),client:sstr(cell(fr,3)),
       platform:sstr(cell(fr,8))||'Unknown',category:sstr(cell(fr,10))||'Unknown',
       asset:sstr(cell(fr,11))||'Unknown',prodType:sstr(cell(fr,12))||'Unknown',
-      amount:num(cell(fr,14)),month:fmo,transType:sstr(cell(fr,31))||'Unknown',
+      amount:num(cell(fr,14)),createDate:serToIsoDate(cell(fr,28)),month:fmo,transType:sstr(cell(fr,31))||'Unknown',
       confirmed:sstr(cell(fr,32)),revenue:num(cell(fr,33))});}
 
   /* PMS — skip rows outside current FY */
   var P=sheet('PMS');
-  for(i=1;i<P.length;i++){var pr=P[i];if(!pr||cell(pr,0)==null||cell(pr,0)==='')continue;
-    if(sstr(cell(pr,1))!=='B2C')continue;
+  for(i=1;i<P.length;i++){var pr=P[i];if(!pr||cell(pr,2)==null||cell(pr,2)==='')continue;
+    if((sstr(cell(pr,1))||'').toUpperCase()==='B2B')continue;
     var pmo=sstr(cell(pr,28)); pmo=pmo?titleCase(pmo):'';
     if(pmo&&fyM.indexOf(pmo)<0)continue;
-    pmsArr.push({dtype:sstr(cell(pr,1)),rm:sstr(cell(pr,2)),client:sstr(cell(pr,3)),
+    pmsArr.push({dtype:sstr(cell(pr,1))||'B2C',rm:sstr(cell(pr,2)),client:sstr(cell(pr,3)),
       platform:sstr(cell(pr,8))||'Unknown',category:sstr(cell(pr,10))||'Unknown',
       asset:sstr(cell(pr,11))||'Unknown',scheme:sstr(cell(pr,12))||'Unknown',
-      punchAmount:num(cell(pr,16)),month:pmo,
+      punchAmount:num(cell(pr,16)),createDate:serToIsoDate(cell(pr,27)),month:pmo,
       confirmed:sstr(cell(pr,32))||'Unknown',revenue:num(cell(pr,33))});}
 
   /* Talk — month-indexed arrays, not filtered by date */
@@ -1569,22 +1843,40 @@ function parseWorkbook(wb){
     talk.push(rec);}
 
   /* REVSUM rows (header already read) */
-  var revsum=[];
+  var revsum=[]; var revsumOverall={mtdTarget:0,mtdAch:0,ytdTarget:0,ytdAch:0};
   for(i=3;i<R.length;i++){var rr=R[i];if(!rr)continue;
-    if(typeof cell(rr,0)!=='number')continue;
     var nm=sstr(cell(rr,3)); if(!nm||nm.toLowerCase().indexOf('pool')===0)continue;
+    if(nm.toLowerCase().indexOf('overall')===0){
+      revsumOverall={mtdTarget:num(cell(rr,7)),mtdAch:num(cell(rr,8)),ytdTarget:num(cell(rr,22)),ytdAch:num(cell(rr,23))};
+      continue;}
+    if(typeof cell(rr,0)!=='number')continue;
     revsum.push({sn:num(cell(rr,0)),empCode:sstr(cell(rr,1)),team:sstr(cell(rr,2))||'Unassigned',name:nm,level:sstr(cell(rr,5)),kra:sstr(cell(rr,6)),
       mtd:{revTarget:num(cell(rr,7)),revAch:num(cell(rr,8)),pct:num(cell(rr,9)),cliTarget:num(cell(rr,10)),totalClients:num(cell(rr,11)),cliAcq:num(cell(rr,12)),
         aumTarget:num(cell(rr,13)),totalAum:num(cell(rr,14)),mfNetSale:num(cell(rr,15)),pmsAif:num(cell(rr,16)),sipTarget:num(cell(rr,17)),sipAdd:num(cell(rr,18)),gtTarget:num(cell(rr,19)),gtTime:talktimeHours(cell(rr,20))},
       ytd:{revTarget:num(cell(rr,22)),revAch:num(cell(rr,23)),revDeff:num(cell(rr,24)),cliTarget:num(cell(rr,25)),totalClients:num(cell(rr,26)),cliAcq:num(cell(rr,27)),
         aumTarget:num(cell(rr,28)),totalAum:num(cell(rr,29)),mfNetSale:num(cell(rr,30)),pmsAif:num(cell(rr,31)),sipTarget:num(cell(rr,32)),sipAdd:num(cell(rr,33)),gtTarget:num(cell(rr,34)),gtTime:talktimeHours(cell(rr,35))}});}
 
+  /* REVENUE REPORT MONTHLY / YTD — reconciled product-wise (different layouts) */
+  function readReport(name,map){
+    var S=sheet(name); var out=[]; var hdrMonth=S.length&&S[0]?sstr(cell(S[0],3)):'';
+    for(var r=2;r<S.length;r++){var row=S[r];if(!row)continue;
+      if(cell(row,0)==null||cell(row,0)==='')continue;
+      var rec={empCode:sstr(cell(row,0)),team:sstr(cell(row,1))||'Unassigned',name:sstr(cell(row,3))||sstr(cell(row,2)),
+        pool:sstr(cell(row,2)).toLowerCase().indexOf('pool')===0};
+      Object.keys(map).forEach(function(k){var s=0;map[k].forEach(function(c){s+=num(cell(row,c));});rec[k]=Math.round(s*100)/100;});
+      out.push(rec);}
+    return {mtdMonth:hdrMonth,rows:out};
+  }
+  var rrMonthly=readReport('REVENUE REPORT MONTHLY',{fees:[4,5],insurance:[13],pms:[15,16,17],trail:[18],total:[19]});
+  var rrYtd=readReport('REVENUE REPORT YTD',{fees:[4,5],insurance:[6,7,8,9,10,11,12],pms:[13,14,15],trail:[16],total:[17]});
+
   return {
     meta:{source:'(live)',fyMonths:fyM,generated:new Date().toLocaleString(),
       insRows:ins.length,feesRows:fees.length,pmsRows:pmsArr.length,talkRows:talk.length,revsumRows:revsum.length,revsumMtdMonth:rsMonth},
     ins:ins,fees:fees,pms:pmsArr,
     talk:{months:fyM,rows:talk},
-    revsum:{mtdMonth:rsMonth,rows:revsum}
+    revsum:{mtdMonth:rsMonth,rows:revsum,overallTarget:revsumOverall},
+    revreport:{mtdMonth:rrMonthly.mtdMonth,monthly:rrMonthly.rows,ytd:rrYtd.rows}
   };
 }
 
@@ -1638,7 +1930,7 @@ function handleUpload(e){
     try{
       var wb=XLSX.read(new Uint8Array(ev.target.result),{
         type:'array',
-        sheets:['INS','FEES','PMS','Talk','REVENUE SUMMARY V 2.0'],
+        sheets:['INS','FEES','PMS','Talk','REVENUE SUMMARY V 2.0','REVENUE REPORT MONTHLY','REVENUE REPORT YTD'],
         cellFormula:false,cellHTML:false,cellDates:false
       });
       DATA=parseWorkbook(wb);
@@ -1649,42 +1941,29 @@ function handleUpload(e){
   rd.readAsArrayBuffer(f);
 }
 
-/* ── GitHub fetch: find first .xlsb in repo, download, parse ── */
+/* ── GitHub fetch: data.js only (fast, ~2 MB) ── */
 async function loadFromGitHub(setStatus){
   var H=GH.token?{'Authorization':'token '+GH.token}:{};
-  var apiBase='https://api.github.com/repos/'+GH.owner+'/'+GH.repo;
+  var rawBase='https://raw.githubusercontent.com/'+GH.owner+'/'+GH.repo;
 
-  /* 1. Get tree to find .xlsb */
-  setStatus('Searching <b>'+GH.owner+'/'+GH.repo+'</b> for .xlsb file…');
-  var tRes=await fetch(apiBase+'/git/trees/'+GH.branch+'?recursive=1',{headers:H});
-  if(!tRes.ok){
-    var e=await tRes.json().catch(function(){return {};});
-    throw new Error('GitHub API '+tRes.status+': '+(e.message||'check repo name / token'));
+  setStatus('Loading data from GitHub…');
+  /* Try main branch first, then master.
+     cache-bust query + no-store so GitHub's CDN / browser never serve a stale
+     copy after a fresh data.js upload. */
+  var bust='?t='+Date.now();
+  var branches=['main','master'];
+  for(var i=0;i<branches.length;i++){
+    var url=rawBase+'/'+branches[i]+'/data.js'+bust;
+    var res=await fetch(url,{headers:H,cache:'no-store'});
+    if(res.ok){
+      var txt=await res.text();
+      var json=txt.replace(/^\s*window\.REVENUE_DATA\s*=\s*/,'').replace(/;\s*$/,'');
+      var d=JSON.parse(json);
+      d.meta=d.meta||{}; d.meta.source=d.meta.source||'GitHub data.js';
+      return d;
+    }
   }
-  var tree=await tRes.json();
-  var entry=(tree.tree||[]).find(function(f){return f.type==='blob'&&f.path.toLowerCase().endsWith('.xlsb');});
-  if(!entry)throw new Error('No .xlsb found in '+GH.owner+'/'+GH.repo+' (branch: '+GH.branch+')');
-
-  /* 2. Download raw file */
-  var fname=entry.path.split('/').pop();
-  var sizeMb=(entry.size/1048576).toFixed(1);
-  setStatus('Downloading <b>'+fname+'</b> ('+sizeMb+' MB)…');
-  var rawUrl='https://raw.githubusercontent.com/'+GH.owner+'/'+GH.repo+'/'+GH.branch+'/'+entry.path;
-  var dlRes=await fetch(rawUrl,{headers:H});
-  if(!dlRes.ok)throw new Error('Download failed ('+dlRes.status+'). If repo is private, set GH.token in app.js.');
-  var buf=await dlRes.arrayBuffer();
-
-  /* 3. Parse — only the 5 needed sheets, skip formulas/HTML for speed */
-  setStatus('Parsing <b>'+fname+'</b> — reading 5 sheets…');
-  await new Promise(function(r){setTimeout(r,40);});   // let browser repaint
-  var wb=XLSX.read(new Uint8Array(buf),{
-    type:'array',
-    sheets:['INS','FEES','PMS','Talk','REVENUE SUMMARY V 2.0'],
-    cellFormula:false,cellHTML:false,cellDates:false
-  });
-  var d=parseWorkbook(wb);
-  d.meta.source=fname;
-  return d;
+  throw new Error('data.js not found in GitHub repo. Run extract.py → upload data.js to the repo.');
 }
 
 async function boot(){
@@ -1694,6 +1973,19 @@ async function boot(){
   var ld=$('loading'), lmsg=$('loading-msg');
   function setStatus(t){if(lmsg)lmsg.innerHTML=t;}
 
+  /* When testing locally (localhost / file://), prefer the freshly-generated
+     local data.js so you can preview new data before pushing to GitHub. */
+  var isLocal=/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)||location.protocol==='file:';
+  if(isLocal&&window.REVENUE_DATA){
+    setStatus('Loading local data…');
+    DATA=window.REVENUE_DATA;
+    buildRmTeam();
+    if(ld)ld.style.display='none';
+    $('app').style.display='block';
+    renderTabs(); populateMonthFilter(); bindFilters(); setTab('dashboard');
+    return;
+  }
+
   /* Try GitHub first */
   if(GH.owner&&GH.repo){
     try{
@@ -1701,7 +1993,7 @@ async function boot(){
     }catch(err){
       console.warn('GitHub load failed:',err.message);
       if(window.REVENUE_DATA){
-        setStatus('GitHub unavailable — using local data…');
+        setStatus('GitHub unavailable (<i>'+err.message+'</i>) — using local data…');
         DATA=window.REVENUE_DATA;
         await new Promise(function(r){setTimeout(r,900);});
       }else{
@@ -1733,10 +2025,22 @@ if(document.readyState!=='loading')boot(); else document.addEventListener('DOMCo
    ============================================================ */
 var TABLE_INFO={
   /* DASHBOARD */
-  'dash-trend':{title:'Revenue Trend — INS vs FEES vs PMS by Month',
-    desc:'Stacked monthly bar chart of total revenue from each product line. Respects the Month and Team filters.',
-    cols:'INS sheet — col 52 REVENUE · col 48 MONTH · col 2 RmName | FEES sheet — col 33 REVENUE · col 29 FEES CAME IN · col 2 RmName | PMS sheet — col 33 REVENUE · col 28 MONTH · col 2 RM. Rows where col 1 (B Type) ≠ "B2C" are excluded.',
+  'dash-trend-total':{title:'Total Revenue Trend by Month',
+    desc:'Stacked monthly bar chart combining Insurance + FEES + PMS revenue. Each segment shows one product line; the total bar height is the combined revenue for that month. Respects Month and Team filters.',
+    cols:'INS revenue (col 52), FEES revenue (col 33), PMS revenue (col 33) — aggregated by month.',
     source:'INS, FEES, PMS sheets'},
+  'dash-trend-ins':{title:'Insurance Revenue Trend by Month',
+    desc:'Monthly bar chart of Insurance revenue. Respects the Month and Team filters.',
+    cols:'INS sheet — col 52 REVENUE · col 48 MONTH · col 2 RmName. Rows where col 1 (B Type) ≠ "B2C" are excluded.',
+    source:'INS sheet'},
+  'dash-trend-fees':{title:'FEES Revenue Trend by Month',
+    desc:'Monthly bar chart of FEES (Financial Planning / Fin-Plan) revenue. Respects the Month and Team filters.',
+    cols:'FEES sheet — col 33 REVENUE · col 29 FEES CAME IN (month) · col 2 RmName. Rows where col 1 (B Type) ≠ "B2C" are excluded.',
+    source:'FEES sheet'},
+  'dash-trend-pms':{title:'PMS Revenue Trend by Month',
+    desc:'Monthly bar chart of PMS (Portfolio Management Services) revenue. Respects the Month and Team filters.',
+    cols:'PMS sheet — col 33 REVENUE · col 28 MONTH · col 2 RM. Rows where col 1 (B Type) ≠ "B2C" are excluded.',
+    source:'PMS sheet'},
   'dash-team':{title:'Revenue by Team (INS + FEES + PMS)',
     desc:'Per-team aggregation of INS, FEES, PMS revenue and total. Team is resolved from RM name via the Talk sheet (RM → Team mapping).',
     cols:'INS col 52 REVENUE · FEES col 33 REVENUE · PMS col 33 REVENUE · RM names from col 2 of each sheet · Team from Talk sheet col 1 (Team) joined on Talk col 2 (Name).',
@@ -1765,10 +2069,18 @@ var TABLE_INFO={
     desc:'Horizontal bar chart of top 15 RMs ranked by INS revenue. Shows Revenue and Premium side-by-side.',
     cols:'col 2 RmName · col 27 Premium · col 52 REVENUE (post-confirmation revenue). B2C only (col 1).',
     source:'INS sheet'},
+  'ins-team-chart':{title:'Insurance Revenue by Team',
+    desc:'Total INS revenue aggregated per team. Team is resolved from each RM via the Talk sheet.',
+    cols:'col 2 RmName → Team (Talk sheet) · col 52 REVENUE.',
+    source:'INS sheet + Talk sheet'},
   'ins-rm-table':{title:'INS RM Rankings — Full List',
     desc:'Every RM with policy count, premium, revenue, %-of-total and average revenue per policy.',
     cols:'col 2 RmName · col 27 Premium · col 52 REVENUE · row count = policy count. Team from Talk sheet.',
     source:'INS, Talk sheets'},
+  'ins-product-mix':{title:'Insurance Product Mix',
+    desc:'Shows how many types of insurance each team (or RM, when a team is selected) has sold, along with total premium and average premium per client. Team view groups by Team × Insurance Type; RM view groups by RM × Insurance Type.',
+    cols:'col 2 RmName · col 11 InsuranceType · col 27 Premium. Team from Talk sheet.',
+    source:'INS sheet + Talk sheet'},
   'ins-instype-chart':{title:'Revenue by Insurance Category (chart)',
     desc:'Vertical bar chart of revenue grouped by Insurance Type. Hover for policy count.',
     cols:'col 11 InsuranceType · col 52 REVENUE.',
@@ -1794,12 +2106,12 @@ var TABLE_INFO={
     cols:'col 10 Category · col 52 REVENUE.',
     source:'INS sheet'},
   'ins-monthly-chart':{title:'Monthly Insurance Revenue',
-    desc:'Per-month revenue + premium bars. The current calendar month is labelled " — MTD".',
-    cols:'col 48 MONTH · col 27 Premium · col 52 REVENUE.',
+    desc:'Per-month revenue + premium bars. Use the Day Window to compare the same day range (e.g. day 1–11) across every month — rows are filtered by their Create Date.',
+    cols:'col 47 CREATEDATE (day filter) · col 48 MONTH · col 27 Premium · col 52 REVENUE.',
     source:'INS sheet'},
   'ins-monthly-table':{title:'Monthly Breakdown',
-    desc:'Per-month policy count, premium and revenue totals.',
-    cols:'col 48 MONTH · col 27 Premium · col 52 REVENUE.',
+    desc:'Per-month policy count, premium and revenue totals for the selected Day Window (filtered by Create Date).',
+    cols:'col 47 CREATEDATE (day filter) · col 48 MONTH · col 27 Premium · col 52 REVENUE.',
     source:'INS sheet'},
   'ins-status-table':{title:'Status Distribution',
     desc:'Policy count and revenue split by Status (Issued / Pending / Cancelled).',
@@ -1815,6 +2127,10 @@ var TABLE_INFO={
     desc:'Horizontal bar chart of top 15 RMs ranked by Net Revenue, showing Gross Amount alongside.',
     cols:'col 2 RmName · col 14 Amount (gross) · col 33 REVENUE (net).',
     source:'FEES sheet'},
+  'fees-team-chart':{title:'Fee Revenue by Team',
+    desc:'Total FEES net revenue aggregated per team. Team is resolved from each RM via the Talk sheet.',
+    cols:'col 2 RmName → Team (Talk sheet) · col 33 REVENUE.',
+    source:'FEES sheet + Talk sheet'},
   'fees-rm-table':{title:'FEES RM Rankings — Full List',
     desc:'Every RM with txn count, gross, net revenue, %-of-total and avg/txn.',
     cols:'col 2 RmName · col 14 Amount · col 33 REVENUE. Team from Talk sheet.',
@@ -1853,6 +2169,10 @@ var TABLE_INFO={
     desc:'Horizontal bars of top 15 RMs ranked by PMS revenue with Investment (Punch Amount) alongside.',
     cols:'col 2 RM · col 16 Punch Amount · col 33 REVENUE.',
     source:'PMS sheet'},
+  'pms-team-chart':{title:'PMS Revenue by Team',
+    desc:'Total PMS revenue aggregated per team. Team is resolved from each RM via the Talk sheet.',
+    cols:'col 2 RM → Team (Talk sheet) · col 33 REVENUE.',
+    source:'PMS sheet + Talk sheet'},
   'pms-rm-table':{title:'PMS RM Rankings — Full List',
     desc:'Every RM with txn count, investment, revenue, %-of-total, avg/txn.',
     cols:'col 2 RM · col 16 Punch Amount · col 33 REVENUE.',
