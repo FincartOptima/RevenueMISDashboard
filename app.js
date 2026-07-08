@@ -426,21 +426,7 @@ function renderDashboard(){
       tgl.appendChild(bar);
     }
 
-    /* Product KPIs from raw sheets — computed first so Total Revenue can use them */
-    var mtdMo=(rr.mtdMonth||'').toUpperCase();
-    function rawByView(arr){
-      var out=view==='ytd'?arr:arr.filter(function(r){return (r.month||'').toUpperCase()===mtdMo;});
-      if(state.chartTeam!=='All') out=filterByTeam(out,state.chartTeam);
-      return out;
-    }
-    var dIns=rawByView(DATA.ins), dFees=rawByView(DATA.fees), dPms=rawByView(DATA.pms||[]);
-    var rawInsRev=sum(dIns,function(r){return r.revenue;});
-    var rawFeesRev=sum(dFees,function(r){return r.revenue;});
-    var rawPmsRev=sum(dPms,function(r){return r.revenue;});
-    var trailRev=rsum('trail');
-    var rawTotal=rawInsRev+rawFeesRev+rawPmsRev+trailRev;
-
-    k.appendChild(kpi(inrCr(rawTotal),'Total Revenue · '+periodLbl,'primary'));
+    k.appendChild(kpi(inrCr(rsum('total')),'Total Revenue · '+periodLbl,'primary'));
 
     /* Revenue Target from REVSUM */
     var vk=view==='ytd'?'ytd':'mtd';
@@ -452,14 +438,22 @@ function renderDashboard(){
       var rsRows=(DATA.revsum.rows||[]).filter(function(r){return r.team===state.chartTeam;});
       revTarget=rsRows.reduce(function(a,r){return a+(r[vk].revTarget||0);},0);
     }
-    var achPct=revTarget?rawTotal/revTarget:0;
+    var achPct=revTarget?rsum('total')/revTarget:0;
     k.appendChild(kpi(inrCr(revTarget),'Revenue Target · '+periodLbl,'red'));
     k.appendChild(kpi(revTarget?pct(achPct):'—','% Achievement',achPct>=0.8?'green':achPct>=0.5?'yellow':'red'));
 
-    k.appendChild(kpi(inrCr(rawInsRev),'Insurance Revenue','blue'));
-    k.appendChild(kpi(inrCr(rawFeesRev),'FEES Revenue','green'));
-    k.appendChild(kpi(inrCr(rawPmsRev),'PMS Revenue','violet'));
-    k.appendChild(kpi(inrCr(trailRev),'Trail Revenue (MF)','orange'));
+    /* Product KPIs from raw sheets */
+    var mtdMo=(rr.mtdMonth||'').toUpperCase();
+    function rawByView(arr){
+      var out=view==='ytd'?arr:arr.filter(function(r){return (r.month||'').toUpperCase()===mtdMo;});
+      if(state.chartTeam!=='All') out=filterByTeam(out,state.chartTeam);
+      return out;
+    }
+    var dIns=rawByView(DATA.ins), dFees=rawByView(DATA.fees), dPms=rawByView(DATA.pms||[]);
+    k.appendChild(kpi(inrCr(sum(dIns,function(r){return r.revenue;})),'Insurance Revenue','blue'));
+    k.appendChild(kpi(inrCr(sum(dFees,function(r){return r.revenue;})),'FEES Revenue','green'));
+    k.appendChild(kpi(inrCr(sum(dPms,function(r){return r.revenue;})),'PMS Revenue','violet'));
+    k.appendChild(kpi(inrCr(rsum('trail')),'Trail Revenue (MF)','orange'));
     k.appendChild(kpi(numFmt(rrows.length),'RMs Reporting','cyan'));
   }else{
     /* fallback: old raw-sheet KPIs when revreport isn't in data.js */
