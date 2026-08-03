@@ -78,6 +78,10 @@ header.app .spacer{flex:1}
 @media(max-width:1100px){.grid.cols-2,.grid.cols-3{grid-template-columns:1fr}}
 
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px}
+.ins-product-kpis{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px}
+.ins-product-kpis .kpi{padding:8px 10px}
+.ins-product-kpis .kpi-value{font-size:15px}
+.ins-product-kpis .kpi-label{font-size:8px}
 .kpi{background:#fff;border:2px solid var(--line);padding:12px 14px;border-left:5px solid var(--primary)}
 .kpi-value{font-size:20px;font-weight:900;line-height:1;letter-spacing:-.8px;color:var(--primary)}
 .kpi-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-top:4px}
@@ -218,15 +222,6 @@ table.data th.sortable:hover{color:var(--primary);background:#263350}
         <label>Period</label>
         <select id="filter-talkmonth"></select>
       </span>
-      <span id="header-revsum-filters" style="display:none">
-        <label>View</label>
-        <select id="filter-revsum-view">
-          <option value="mtd">MTD</option>
-          <option value="ytd">YTD</option>
-        </select>
-        <label>Team</label>
-        <select id="filter-revsum-team"></select>
-      </span>
       <label class="upload-btn">↑ Re-upload .xlsb
         <input type="file" id="reupload-file" accept=".xlsb,.xlsx,.xls" style="display:none">
       </label>
@@ -251,24 +246,6 @@ table.data th.sortable:hover{color:var(--primary);background:#263350}
     </div>
   </div>
 
-  <!-- REVENUE SUMMARY V2.0 — static structure -->
-  <div class="tab-panel" id="tab-revsum">
-    <div class="meta">Source: <strong>REVENUE SUMMARY V 2.0</strong> — KRA targets vs achievement per RM. MTD period: <strong id="revsum-period">—</strong>.</div>
-    <div class="kpis" id="revsum-kpis"></div>
-    <div class="section bar-orange">
-      <h2>Top RMs — Revenue Achieved vs Target <button class="info-btn" data-info="revsum-chart" title="Chart info">i</button></h2>
-      <div class="chart-wrap h400"><canvas id="revsum-chart"></canvas></div>
-    </div>
-    <div class="section bar-green">
-      <h2>Team Summary — Target vs Achievement <button class="info-btn" data-info="revsum-team" title="Table info">i</button></h2>
-      <div class="table-wrap" id="revsum-team"></div>
-    </div>
-    <div class="section bar-violet">
-      <h2>RM Detail — KRA Scorecard <button class="info-btn" data-info="revsum-detail" title="Table info">i</button></h2>
-      <div class="table-wrap tall" id="revsum-detail"></div>
-      <div class="hint">% Ach: <span style="color:var(--green);font-weight:700">≥100%</span> · <span style="color:var(--cyan);font-weight:700">70–99%</span> · <span style="color:var(--yellow);font-weight:700">40–69%</span> · <span style="color:var(--red);font-weight:700">&lt;40%</span>. AUM/MF/PMS in Cr/L.</div>
-    </div>
-  </div>
 
   <!-- INS, FEES, PMS, TALK — fully dynamic (JS renders everything) -->
   <div class="tab-panel" id="tab-ins"></div>
