@@ -246,13 +246,13 @@ try:
                 'revTarget':num(g(7)),'revAch':num(g(8)),'pct':num(g(9)),
                 'cliTarget':num(g(10)),'totalClients':num(g(11)),'cliAcq':num(g(12)),
                 'aumTarget':num(g(13)),'totalAum':num(g(14)),'mfNetSale':num(g(15)),'pmsAif':num(g(16)),
-                'sipTarget':num(g(17)),'sipAdd':num(g(18)),'gtTarget':num(g(19)),'gtTime':round(hms_to_hours(g(20)),3)
+                'sipTarget':num(g(17)),'sipAdd':num(g(18)),'gtTarget':round(hms_to_hours(g(19)),3),'gtTime':round(hms_to_hours(g(20)),3)
             },
             'ytd':{
                 'revTarget':num(g(22)),'revAch':num(g(23)),'revDeff':num(g(24)),
                 'cliTarget':num(g(25)),'totalClients':num(g(26)),'cliAcq':num(g(27)),
                 'aumTarget':num(g(28)),'totalAum':num(g(29)),'mfNetSale':num(g(30)),'pmsAif':num(g(31)),
-                'sipTarget':num(g(32)),'sipAdd':num(g(33)),'gtTarget':num(g(34)),'gtTime':round(hms_to_hours(g(35)),3)
+                'sipTarget':num(g(32)),'sipAdd':num(g(33)),'gtTarget':round(hms_to_hours(g(34)),3),'gtTime':round(hms_to_hours(g(35)),3)
             }
         })
     print(f'{len(revsum_rows)} rows  ({time.time()-t0:.1f}s)', flush=True)
@@ -286,13 +286,13 @@ try:
                     'revTarget':num(g(7)),'revAch':num(g(8)),'pct':num(g(9)),
                     'cliTarget':num(g(10)),'totalClients':num(g(11)),'cliAcq':num(g(12)),
                     'aumTarget':num(g(13)),'totalAum':num(g(14)),'mfNetSale':num(g(15)),'pmsAif':num(g(16)),
-                    'sipTarget':num(g(17)),'sipAdd':num(g(18)),'gtTarget':num(g(19)),'gtTime':round(hms_to_hours(g(20)),3)
+                    'sipTarget':num(g(17)),'sipAdd':num(g(18)),'gtTarget':round(hms_to_hours(g(19)),3),'gtTime':round(hms_to_hours(g(20)),3)
                 },
                 'ytd':{
                     'revTarget':num(g(22)),'revAch':num(g(23)),'revDeff':num(g(24)),
                     'cliTarget':num(g(25)),'totalClients':num(g(26)),'cliAcq':num(g(27)),
                     'aumTarget':num(g(28)),'totalAum':num(g(29)),'mfNetSale':num(g(30)),'pmsAif':num(g(31)),
-                    'sipTarget':num(g(32)),'sipAdd':num(g(33)),'gtTarget':num(g(34)),'gtTime':round(hms_to_hours(g(35)),3)
+                    'sipTarget':num(g(32)),'sipAdd':num(g(33)),'gtTarget':round(hms_to_hours(g(34)),3),'gtTime':round(hms_to_hours(g(35)),3)
                 }
             })
         return month_lbl, rows_out, overall_out
