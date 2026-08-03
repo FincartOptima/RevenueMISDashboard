@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import win32com.client as win32
 
 # Auto-detect the most recently modified .xlsb in this folder
-_xlsb_files = sorted(glob.glob('*.xlsb'), key=os.path.getmtime, reverse=True)
+_xlsb_files = sorted([f for f in glob.glob('*.xlsb') if not os.path.basename(f).startswith('~$')], key=os.path.getmtime, reverse=True)
 if not _xlsb_files:
     raise FileNotFoundError('No .xlsb file found in this folder. Copy the MIS file here first.')
 SRC = _xlsb_files[0]
@@ -258,6 +258,49 @@ try:
     print(f'{len(revsum_rows)} rows  ({time.time()-t0:.1f}s)', flush=True)
     print(f'  Overall target: MTD={revsum_overall["mtdTarget"]}, YTD={revsum_overall["ytdTarget"]}', flush=True)
 
+    # -------- MULTI-MONTH REVSUM via Dashboard E5 --------
+    def read_revsum_snapshot():
+        """Read current REVSUM sheet state and return (month_label, rows, overall)."""
+        rows_out=[]
+        overall_out={'mtdTarget':0,'mtdAch':0,'ytdTarget':0,'ytdAch':0}
+        month_lbl=''
+        for i,row in enumerate(sheet_data(wb,'REVENUE SUMMARY V 2.0', ncols=37, last_col=4)):
+            def g(ix): return row[ix] if ix<len(row) else None
+            if i==0: month_lbl=s(g(3)); continue
+            if i<3: continue
+            nm=s(g(3))
+            if nm=='' or nm.lower().startswith('pool'): continue
+            if nm.lower().startswith('overall'):
+                overall_out={'mtdTarget':num(g(7)),'mtdAch':num(g(8)),'ytdTarget':num(g(22)),'ytdAch':num(g(23))}
+                continue
+            if isinstance(g(0), (int,float)) or s(g(0)).isdigit():
+                pass  # has serial number = data row
+            elif s(g(0))=='' and nm!='':
+                pass  # blank sn but has name = data row
+            else:
+                continue
+            rows_out.append({
+                'sn':num(g(0)),'empCode':s(g(1)),'team':s(g(2)) or 'Unassigned',
+                'name':nm,'level':s(g(5)),'kra':s(g(6)),
+                'mtd':{
+                    'revTarget':num(g(7)),'revAch':num(g(8)),'pct':num(g(9)),
+                    'cliTarget':num(g(10)),'totalClients':num(g(11)),'cliAcq':num(g(12)),
+                    'aumTarget':num(g(13)),'totalAum':num(g(14)),'mfNetSale':num(g(15)),'pmsAif':num(g(16)),
+                    'sipTarget':num(g(17)),'sipAdd':num(g(18)),'gtTarget':num(g(19)),'gtTime':round(hms_to_hours(g(20)),3)
+                },
+                'ytd':{
+                    'revTarget':num(g(22)),'revAch':num(g(23)),'revDeff':num(g(24)),
+                    'cliTarget':num(g(25)),'totalClients':num(g(26)),'cliAcq':num(g(27)),
+                    'aumTarget':num(g(28)),'totalAum':num(g(29)),'mfNetSale':num(g(30)),'pmsAif':num(g(31)),
+                    'sipTarget':num(g(32)),'sipAdd':num(g(33)),'gtTarget':num(g(34)),'gtTime':round(hms_to_hours(g(35)),3)
+                }
+            })
+        return month_lbl, rows_out, overall_out
+
+    key=revsum_mtd_month.upper() if revsum_mtd_month else 'CURRENT'
+    revsum_by_month={key:{'rows':revsum_rows,'overallTarget':revsum_overall}}
+    print(f'  Using current month REVSUM ({key})  ({time.time()-t0:.1f}s)', flush=True)
+
     # -------- REVENUE REPORT MONTHLY / YTD (reconciled product-wise) --------
     # Column layouts differ between the two sheets:
     #   MONTHLY: fees=FP New+Renewal · insurance=Total Insurance col · pms=Unlisted+PMS+Stallion · trail=MF Trail
@@ -299,7 +342,7 @@ data={
     },
     'ins':ins,'fees':fees,'pms':pms_rows,
     'talk':{'months':FY_MONTHS,'rows':talk_rows},
-    'revsum':{'mtdMonth':revsum_mtd_month,'rows':revsum_rows,'overallTarget':revsum_overall},
+    'revsum':{'mtdMonth':revsum_mtd_month,'rows':revsum_rows,'overallTarget':revsum_overall,'months':revsum_by_month},
     'revreport':{'mtdMonth':rr_month,'monthly':rr_monthly,'ytd':rr_ytd},
 }
 

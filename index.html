@@ -158,6 +158,37 @@ table.data th.sortable:hover{color:var(--primary);background:#263350}
 .raw-filter-footer button{flex:1;border:0;border-right:1px solid var(--line);padding:6px;font-size:11px;background:#fff;color:var(--primary);font-weight:700;border-radius:0}
 .raw-filter-footer button:hover{background:var(--primary);color:#fff}
 .raw-filter-footer button:last-child{border-right:0}
+
+/* Dashboard controls bar */
+.dash-controls-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding-bottom:12px;border-bottom:2px solid var(--line)}
+.dash-controls-bar .dash-toggle{display:flex;gap:0}
+.dash-controls-bar .dash-toggle .vbtn{border-radius:0}
+.dash-filter-group{display:flex;gap:6px;align-items:center}
+.dash-filter-group label{font-size:10px;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.4px}
+.dash-filter-group select{min-width:120px;font-size:12px}
+
+/* KPI card with 3 sub-values */
+.kpi-trio{background:#fff;border:2px solid var(--line);padding:14px 16px;border-left:5px solid var(--primary)}
+.kpi-trio-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px}
+.kpi-trio-row{display:flex;gap:12px}
+.kpi-trio-item{flex:1;text-align:center}
+.kpi-trio-val{font-size:17px;font-weight:900;line-height:1;letter-spacing:-.5px}
+.kpi-trio-lbl{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);margin-top:3px}
+.kpi-trio-primary{border-left-color:var(--primary)}.kpi-trio-primary .kpi-trio-val{color:var(--primary)}
+.kpi-trio-blue{border-left-color:var(--blue)}.kpi-trio-blue .kpi-trio-val{color:var(--blue)}
+.kpi-trio-green{border-left-color:var(--green)}.kpi-trio-green .kpi-trio-val{color:var(--green)}
+.kpi-trio-orange{border-left-color:var(--orange)}.kpi-trio-orange .kpi-trio-val{color:var(--orange)}
+.kpi-trio-violet{border-left-color:var(--violet)}.kpi-trio-violet .kpi-trio-val{color:var(--violet)}
+.kpi-trio-cyan{border-left-color:var(--cyan)}.kpi-trio-cyan .kpi-trio-val{color:var(--cyan)}
+.kpi-trio-teal{border-left-color:var(--teal)}.kpi-trio-teal .kpi-trio-val{color:var(--teal)}
+.kpi-trio-red{border-left-color:var(--red)}.kpi-trio-red .kpi-trio-val{color:var(--red)}
+.kpi-trio-pink{border-left-color:var(--pink)}.kpi-trio-pink .kpi-trio-val{color:var(--pink)}
+
+/* Metric pills bar for dashboard chart */
+.dash-metric-bar{display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap}
+.dash-mpill{padding:5px 12px;border:2px solid var(--line);background:var(--panel);color:var(--muted);font:600 11px/1 inherit;cursor:pointer}
+.dash-mpill:hover:not(.active){background:var(--panel2);color:var(--text);border-color:#99a4b6}
+.dash-mpill.active{border-color:var(--primary);color:var(--primary);background:var(--primary-light)}
 </style>
 </head>
 <body>
@@ -204,37 +235,19 @@ table.data th.sortable:hover{color:var(--primary);background:#263350}
 
   <div id="tabs"></div>
 
-  <!-- DASHBOARD — static structure, JS fills in -->
+  <!-- DASHBOARD — KPIs, bar chart, data table -->
   <div class="tab-panel" id="tab-dashboard">
-    <div id="dash-rev-toggle"></div>
+    <div id="dash-controls"></div>
     <div class="kpis" id="dash-kpis"></div>
     <div class="kpis" id="dash-kpis2"></div>
-    <div class="section bar-primary">
-      <h2>Total Revenue Trend (by Month) <button class="info-btn" data-info="dash-trend-total" title="Chart info">i</button></h2>
-      <div class="chart-wrap"><canvas id="dash-trend-total"></canvas></div>
+    <div class="section bar-primary" id="dash-chart-section">
+      <div id="dash-metric-bar"></div>
+      <h2 id="dash-chart-title">Revenue by Team</h2>
+      <div class="chart-wrap h400"><canvas id="dash-bar-chart"></canvas></div>
     </div>
-    <div class="section bar-blue">
-      <h2>Insurance Revenue Trend (by Month) <button class="info-btn" data-info="dash-trend-ins" title="Chart info">i</button></h2>
-      <div class="chart-wrap"><canvas id="dash-trend-ins"></canvas></div>
-    </div>
-    <div class="section bar-green">
-      <h2>FEES Revenue Trend (by Month) <button class="info-btn" data-info="dash-trend-fees" title="Chart info">i</button></h2>
-      <div class="chart-wrap"><canvas id="dash-trend-fees"></canvas></div>
-    </div>
-    <div class="section bar-violet">
-      <h2>PMS Revenue Trend (by Month) <button class="info-btn" data-info="dash-trend-pms" title="Chart info">i</button></h2>
-      <div class="chart-wrap"><canvas id="dash-trend-pms"></canvas></div>
-    </div>
-    <div class="grid cols-2">
-      <div class="section bar-green">
-        <h2>Revenue by Team (INS + FEES + PMS) <button class="info-btn" data-info="dash-team" title="Table info">i</button></h2>
-        <div class="table-wrap" id="dash-team"></div>
-        <div class="hint">Team mapping derived from Talk sheet.</div>
-      </div>
-      <div class="section bar-orange">
-        <h2>Revenue by Month <button class="info-btn" data-info="dash-month" title="Table info">i</button></h2>
-        <div class="table-wrap" id="dash-month"></div>
-      </div>
+    <div class="section bar-primary" id="dash-table-section">
+      <h2 id="dash-table-title">Detail</h2>
+      <div class="table-wrap tall" id="dash-data-table"></div>
     </div>
   </div>
 
