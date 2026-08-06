@@ -20,6 +20,8 @@ var state = {
   insView:'rm', feesView:'rm', pmsView:'rm', talkView:'team',
   talkMetric:'netSale',
   insMonth:'All', insTeam:'All', insProduct:'All', insPartnerProduct:'All', insMonthlyStatus:'All',
+  feesMonth:'All', feesTeam:'All', feesProduct:'All',
+  pmsMonth:'All', pmsTeam:'All', pmsAssetFilter:'All',
   insSearch:'', feesSearch:'', pmsSearch:'',
   insRawFilters:{rm:'All',insType:'All',partner:'All',status:'All'},
   insRawSort:{col:'',dir:1}
@@ -118,10 +120,10 @@ function getINS(){
   return filterByTeam(DATA.ins.filter(function(r){ return state.insMonth==='All'||r.month===state.insMonth; }),state.insTeam);
 }
 function getFEES(){
-  return filterByTeam(DATA.fees.filter(function(r){ return state.month==='All'||r.month===state.month; }),state.chartTeam);
+  return filterByTeam(DATA.fees.filter(function(r){ return state.feesMonth==='All'||r.month===state.feesMonth; }),state.feesTeam);
 }
 function getPMS(){
-  return filterByTeam((DATA.pms||[]).filter(function(r){ return state.month==='All'||r.month===state.month; }),state.chartTeam);
+  return filterByTeam((DATA.pms||[]).filter(function(r){ return state.pmsMonth==='All'||r.month===state.pmsMonth; }),state.pmsTeam);
 }
 function getTalkRows(){
   var rows=DATA.talk.rows;
@@ -389,8 +391,8 @@ function setTab(id){
   document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active');});
   $('tab-'+id).classList.add('active');
   renderTabs();
-  /* show month+team filter for raw-data tabs only (dashboard/ins have own controls) */
-  $('header-dash-filters').style.display=(id==='dashboard'||id==='ins')?'none':'';
+  /* show header filters only for talk tab; dashboard/ins/fees/pms have own page-level controls */
+  $('header-dash-filters').style.display='none';
   $('header-talk-filters').style.display=id==='talk'?'':'none';
   renderActive();
 }
@@ -1113,27 +1115,80 @@ function insRawView(pane,ins){
    FEES TAB
    ============================================================ */
 var FEES_VIEWS=[
-  {id:'rm',    label:'🏅 RM Analysis'},
-  {id:'product',label:'📦 Product Breakdown'},
-  {id:'monthly',label:'📅 Monthly Trend'},
-  {id:'raw',   label:'🔍 Raw Data'}
+  {id:'rm',    label:'RM Analysis'},
+  {id:'product',label:'Product Breakdown'},
+  {id:'monthly',label:'Monthly Trend'},
+  {id:'raw',   label:'Raw Data'}
 ];
+
+function feesAllTeams(){
+  var t={}; DATA.fees.forEach(function(r){var tm=teamOf(r.rm);if(tm&&tm!=='Unassigned')t[tm]=1;});
+  return Object.keys(t).sort();
+}
+function feesAllTransTypes(){
+  var t={}; DATA.fees.forEach(function(r){if(r.transType)t[r.transType]=1;});
+  return Object.keys(t).sort();
+}
+function feesAllCategories(){
+  var t={}; DATA.fees.forEach(function(r){if(r.category)t[r.category]=1;});
+  return Object.keys(t).sort();
+}
 
 function renderFEES(){
   var pane=$('tab-fees'); pane.innerHTML='';
+
+  /* ── Controls bar (Month + Team) ── */
+  var ctrl=el('div','dash-controls-bar');
+  var mfg=el('div','dash-filter-group');
+  mfg.appendChild(el('label',null,'Month'));
+  var msel=el('select');
+  var mo=el('option',null,'All Months');mo.value='All';msel.appendChild(mo);
+  (DATA.meta.fyMonths||[]).forEach(function(m){var o=el('option',null,m);o.value=m;msel.appendChild(o);});
+  msel.value=state.feesMonth;
+  msel.onchange=function(){state.feesMonth=this.value;renderFEES();};
+  mfg.appendChild(msel);
+  ctrl.appendChild(mfg);
+
+  var tfg=el('div','dash-filter-group');
+  tfg.appendChild(el('label',null,'Team'));
+  var tsel=el('select');
+  var to2=el('option',null,'All Teams');to2.value='All';tsel.appendChild(to2);
+  feesAllTeams().forEach(function(t){var o=el('option',null,t);o.value=t;tsel.appendChild(o);});
+  tsel.value=state.feesTeam;
+  tsel.onchange=function(){state.feesTeam=this.value;renderFEES();};
+  tfg.appendChild(tsel);
+  ctrl.appendChild(tfg);
+  pane.appendChild(ctrl);
+
   var fees=getFEES();
   var totalRev=sum(fees,function(r){return r.revenue;});
   var totalAmt=sum(fees,function(r){return r.amount;});
   var confRev=sum(fees.filter(function(r){return r.confirmed==='CONFIRMED';}),function(r){return r.revenue;});
 
-  pane.appendChild(kpiRow([
-    [inrCr(totalRev),'Fee Revenue (Net)','primary'],
-    [inrCr(totalAmt),'Gross Amount','blue'],
-    [numFmt(fees.length),'Fee Transactions','green'],
-    [inrCr(confRev),'Confirmed Revenue','green'],
-    [inrCr(avg(totalRev,fees.length)),'Avg Fee / Txn','violet'],
-    [inrCr(totalAmt-totalRev),'Net Deduction','red']
-  ]));
+  /* ── KPI Cards ── */
+  var kRow=el('div','kpis');
+  kRow.appendChild(kpi(inrCr(totalRev),'Fee Revenue (Net)','primary'));
+  kRow.appendChild(kpi(inrCr(totalAmt),'Gross Amount','blue'));
+  kRow.appendChild(kpi(numFmt(fees.length),'Fee Transactions','green'));
+  kRow.appendChild(kpi(inrCr(confRev),'Confirmed Revenue','teal'));
+  kRow.appendChild(kpi(inrCr(avg(totalRev,fees.length)),'Avg Fee / Txn','violet'));
+  kRow.appendChild(kpi(inrCr(totalAmt-totalRev),'Net Deduction','red'));
+  pane.appendChild(kRow);
+
+  /* per-category KPI cards */
+  var cats=feesAllCategories();
+  if(cats.length>1){
+    var kRow2=el('div','kpis ins-product-kpis');
+    var colors=['blue','green','orange','violet','cyan','pink','primary','red'];
+    cats.forEach(function(cat,idx){
+      var catRows=fees.filter(function(r){return r.category===cat;});
+      var catRev=sum(catRows,function(r){return r.revenue;});
+      kRow2.appendChild(kpi(inrCr(catRev),cat+' Revenue',colors[idx%colors.length]));
+      kRow2.appendChild(kpi(numFmt(catRows.length),cat+' Txns',colors[idx%colors.length]));
+    });
+    pane.appendChild(kRow2);
+  }
+
   pane.appendChild(makeViewBar(FEES_VIEWS,state.feesView,function(v){state.feesView=v;renderFEES();}));
 
   if(state.feesView==='rm')      feesRmView(pane,fees,totalRev);
@@ -1142,103 +1197,284 @@ function renderFEES(){
   else feesRawView(pane,fees);
 }
 
+/* RM Analysis — category filter, X=team, Y=revenue */
 function feesRmView(pane,fees,totalRev){
-  var byRM=assignRevRank(pivot(fees,function(r){return r.rm;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}));
-  var tot=totalRev||1;
-  var teamSel=state.chartTeam;
+  var fbar=el('div','dash-controls-bar');
+  var fg=el('div','dash-filter-group');
+  fg.appendChild(el('label',null,'Category'));
+  var psel=el('select');
+  var pa=el('option',null,'All Categories');pa.value='All';psel.appendChild(pa);
+  feesAllCategories().forEach(function(c){var o=el('option',null,c);o.value=c;psel.appendChild(o);});
+  psel.value=state.feesProduct;
+  psel.onchange=function(){state.feesProduct=this.value;renderFEES();};
+  fg.appendChild(psel);
+  fbar.appendChild(fg);
+  pane.appendChild(fbar);
 
-  /* chart always ranked by Revenue (desc); title reflects team filter */
-  var byRev15=byRM.slice().sort(byRev).slice(0,15);
-  var chartTitle=(teamSel&&teamSel!=='All') ? 'RM Rankings — '+teamSel : 'Top 15 RMs by Fee Revenue';
+  var filtered=state.feesProduct==='All'?fees:fees.filter(function(r){return r.category===state.feesProduct;});
+  var fRev=sum(filtered,function(r){return r.revenue;});
+
+  var byTeam=pivot(filtered,function(r){return teamOf(r.rm);},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}).sort(byRev);
+  var chartTitle='Fee Revenue by Team'+(state.feesProduct!=='All'?' — '+state.feesProduct:'');
   var s1=sect(chartTitle,'bar-orange','fees-rm-chart');
-  s1.appendChild(cw('fees-rm-chart',420)); pane.appendChild(s1);
-  drawHBar('fees-rm-chart',byRev15.map(function(r){return r.key;}),[
-    {label:'Net Revenue',data:byRev15.map(function(r){return r.rev;}),backgroundColor:ACCENTS[2]},
-    {label:'Gross Amount',data:byRev15.map(function(r){return r.amt;}),backgroundColor:ACCENTS[1]}
-  ],{money:true});
+  s1.appendChild(cw('fees-rm-chart',350)); pane.appendChild(s1);
+  drawBar('fees-rm-chart',byTeam.map(function(r){return r.key;}),[
+    {label:'Revenue',data:byTeam.map(function(r){return r.rev;}),backgroundColor:byTeam.map(function(_,i){return ACCENTS[i%ACCENTS.length];})}
+  ],{money:true,legend:false,countData:byTeam.map(function(r){return r._count;})});
 
-  /* revenue by team */
-  teamRevChart(pane,fees,'fees-team-chart','bar-green');
-
-  /* full list — sortable columns */
-  if(!state.feesRmSort) state.feesRmSort={col:'rev',dir:-1};
-  var ss=state.feesRmSort;
-  var sorted=byRM.slice().sort(function(a,b){
-    var va,vb;
-    if(ss.col==='rm'){ va=(a.key||'').toLowerCase(); vb=(b.key||'').toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
-    if(ss.col==='team'){ va=teamOf(a.key).toLowerCase(); vb=teamOf(b.key).toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
-    if(ss.col==='count'){ va=a._count; vb=b._count; }
-    else if(ss.col==='amt'){ va=a.amt; vb=b.amt; }
-    else if(ss.col==='avg'){ va=avg(a.rev,a._count); vb=avg(b.rev,b._count); }
-    else { va=a.rev; vb=b.rev; }   /* rev, pct */
-    return (va-vb)*ss.dir;
-  });
-
-  var s2=sect('RM Rankings — Full List','bar-blue','fees-rm-table');
+  var s2=sect('Team Breakdown','bar-blue','fees-rm-table');
   var tw=el('div','table-wrap tall');
   tw.appendChild(buildTable([
-    {label:'#',   get:function(r){return r._rank;},align:'right',isRank:true},
-    {label:'RM',  sortKey:'rm',   get:function(r){return r.key;}},
-    {label:'Team',sortKey:'team', get:function(r){return teamOf(r.key);}},
-    {label:'Txns',sortKey:'count',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
-    {label:'Gross',sortKey:'amt', get:function(r){return r.amt;},fmt:inr,align:'right',sum:true},
-    {label:'Net Revenue',sortKey:'rev',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
-    {label:'% Total',sortKey:'pct',get:function(r){return r.rev/tot;},fmt:pct,align:'right'},
-    {label:'Avg/Txn',sortKey:'avg',get:function(r){return avg(r.rev,r._count);},fmt:inr,align:'right'}
-  ],sorted,{grand:true,heat:5,
-    sortState:{col:ss.col,dir:ss.dir},
-    onSort:function(k){
-      if(state.feesRmSort.col===k) state.feesRmSort.dir*=-1;
-      else state.feesRmSort={col:k,dir:-1};
-      renderFEES();
-    }
-  }));
+    {label:'Team',get:function(r){return r.key;}},
+    {label:'Txns',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
+    {label:'Gross',get:function(r){return r.amt;},fmt:inr,align:'right',sum:true},
+    {label:'Net Revenue',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
+    {label:'% Share',get:function(r){return fRev?r.rev/fRev:0;},fmt:pct,align:'right'}
+  ],byTeam,{grand:true,heat:3}));
   s2.appendChild(tw); pane.appendChild(s2);
 }
 
+/* Product Breakdown — X=transaction type, Y=revenue, no filter */
 function feesProductView(pane,fees,totalRev){
-  var byTrans=pivot(fees,function(r){return r.transType;},{rev:function(r){return r.revenue;}}).sort(byRev);
-  var byAsset=pivot(fees,function(r){return r.asset+' / '+r.prodType;},{rev:function(r){return r.revenue;}}).sort(byRev);
-  var byCategory=pivot(fees,function(r){return r.category;},{rev:function(r){return r.revenue;}}).sort(byRev);
+  var byTrans=pivot(fees,function(r){return r.transType;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}).sort(byRev);
   var tot=totalRev||1;
 
   var s1=sect('Revenue by Transaction Type','bar-orange','fees-trans-chart');
-  s1.appendChild(cw('fees-trans-chart',280)); pane.appendChild(s1);
+  s1.appendChild(cw('fees-trans-chart',350)); pane.appendChild(s1);
   drawBar('fees-trans-chart',byTrans.map(function(r){return r.key;}),[
     {label:'Revenue',data:byTrans.map(function(r){return r.rev;}),backgroundColor:byTrans.map(function(_,i){return ACCENTS[i%ACCENTS.length];})}
   ],{money:true,legend:false,countData:byTrans.map(function(r){return r._count;})});
 
-  var g=el('div','grid cols-2');
-  var t1=sect('By Transaction Type','bar-blue','fees-trans-table');
-  var tw1=el('div','table-wrap'); tw1.appendChild(revShareTable(byTrans,tot)); t1.appendChild(tw1); g.appendChild(t1);
-  var t2=sect('By Asset / Product','bar-green','fees-asset-table');
-  var tw2=el('div','table-wrap'); tw2.appendChild(revShareTable(byAsset,tot)); t2.appendChild(tw2); g.appendChild(t2);
-  pane.appendChild(g);
-
-  var s2=sect('By Source / Category','bar-violet','fees-category-table');
-  var tw3=el('div','table-wrap'); tw3.appendChild(revShareTable(byCategory,tot)); s2.appendChild(tw3); pane.appendChild(s2);
+  var s2=sect('Transaction Type Breakdown','bar-blue','fees-trans-table');
+  var tw=el('div','table-wrap tall');
+  tw.appendChild(buildTable([
+    {label:'Transaction Type',get:function(r){return r.key;}},
+    {label:'Txns',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
+    {label:'Gross',get:function(r){return r.amt;},fmt:inr,align:'right',sum:true},
+    {label:'Revenue',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
+    {label:'% Share',get:function(r){return r.rev/tot;},fmt:pct,align:'right'}
+  ],byTrans,{grand:true,heat:3}));
+  s2.appendChild(tw); pane.appendChild(s2);
 }
 
+/* Monthly Trend — X=months, Y=revenue */
 function feesMonthlyView(pane,fees){
-  pane.appendChild(dayWindowBar('fees'));
-  var w=applyDayWindow(fees,'fees');
-  var win=w.rows;
-  var sd=state.feesMtdStart, ed=state.feesMtdEnd;
+  var months=uniqInFyOrder(fees.map(function(r){return r.month;}));
+  function msum(m){return sum(fees.filter(function(r){return r.month===m;}),function(r){return r.revenue;});}
+  function asum(m){return sum(fees.filter(function(r){return r.month===m;}),function(r){return r.amount;});}
 
-  var months=uniqInFyOrder(win.map(function(r){return r.month;}));
-  function msum(m){return sum(win.filter(function(r){return r.month===m;}),function(r){return r.revenue;});}
-  function asum(m){return sum(win.filter(function(r){return r.month===m;}),function(r){return r.amount;});}
-
-  var s1=sect('Monthly Fee Revenue Trend (Day '+sd+'–'+ed+')','bar-blue','fees-monthly-chart');
-  s1.appendChild(cw('fees-monthly-chart',300)); pane.appendChild(s1);
+  var s1=sect('Monthly Fee Revenue Trend','bar-blue','fees-monthly-chart');
+  s1.appendChild(cw('fees-monthly-chart',350)); pane.appendChild(s1);
   drawBar('fees-monthly-chart',months.map(mtdLabel),[
     {label:'Net Revenue',data:months.map(msum),backgroundColor:ACCENTS[2]},
     {label:'Gross Amount',data:months.map(asum),backgroundColor:ACCENTS[1]}
   ],{money:true});
 
-  var byMonth=fyOrder(pivot(win,function(r){return r.month;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}));
+  var byMonth=fyOrder(pivot(fees,function(r){return r.month;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}));
   var s2=sect('Monthly Breakdown','bar-green','fees-monthly-table');
-  var tw=el('div','table-wrap');
+  var tw=el('div','table-wrap tall');
+  tw.appendChild(buildTable([
+    {label:'Month',get:function(r){return mtdLabel(r.key);}},
+    {label:'Txns',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
+    {label:'Gross Amount',get:function(r){return r.amt;},fmt:inr,align:'right',sum:true},
+    {label:'Net Revenue',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true}
+  ],byMonth,{grand:true}));
+  s2.appendChild(tw); pane.appendChild(s2);
+}
+
+function feesRawView(pane,fees){
+  var s=sect('FEES — Raw Transaction Data','bar-red','fees-raw');
+  var frow=el('div','filters'); frow.style.marginBottom='8px';
+  var inp=el('input'); inp.type='text'; inp.placeholder='Search RM, client, asset, category…'; inp.style.minWidth='300px';
+  inp.value=state.feesSearch;
+  var meta=el('span','meta'); meta.style.marginLeft='8px';
+  var tbody=el('div');
+  function refresh(){
+    var q=state.feesSearch.toLowerCase();
+    var data=fees.filter(function(r){
+      return !q||(r.rm+' '+r.client+' '+r.asset+' '+r.category+' '+r.transType).toLowerCase().indexOf(q)>=0;
+    });
+    meta.textContent=data.length+' rows';
+    tbody.innerHTML='';
+    var tw=el('div','table-wrap tall');
+    tw.appendChild(buildTable([
+      {label:'#',get:function(r,i){return i+1;},align:'right',isRank:true},
+      {label:'RM',get:function(r){return r.rm;}},
+      {label:'Client',get:function(r){return r.client;}},
+      {label:'Asset',get:function(r){return r.asset;}},
+      {label:'Prod Type',get:function(r){return r.prodType;}},
+      {label:'Category',get:function(r){return r.category;}},
+      {label:'Month',get:function(r){return r.month;}},
+      {label:'Gross',get:function(r){return r.amount;},fmt:inr,align:'right'},
+      {label:'Net Revenue',get:function(r){return r.revenue;},fmt:inr,align:'right'},
+      {label:'Trans Type',get:function(r){return r.transType;}}
+    ],data,{}));
+    tbody.appendChild(tw);
+  }
+  inp.oninput=function(){state.feesSearch=this.value;refresh();};
+  frow.appendChild(inp); frow.appendChild(meta);
+  s.appendChild(frow); s.appendChild(tbody); pane.appendChild(s);
+  refresh();
+}
+
+/* ============================================================
+   FEES TAB
+   ============================================================ */
+var FEES_VIEWS=[
+  {id:'rm',    label:'RM Analysis'},
+  {id:'product',label:'Product Breakdown'},
+  {id:'monthly',label:'Monthly Trend'},
+  {id:'raw',   label:'Raw Data'}
+];
+
+function feesAllTeams(){
+  var t={}; DATA.fees.forEach(function(r){var tm=teamOf(r.rm);if(tm&&tm!=='Unassigned')t[tm]=1;});
+  return Object.keys(t).sort();
+}
+function feesAllCategories(){
+  var t={}; DATA.fees.forEach(function(r){if(r.category)t[r.category]=1;});
+  return Object.keys(t).sort();
+}
+
+function renderFEES(){
+  var pane=$('tab-fees'); pane.innerHTML='';
+
+  /* ── Controls bar (Month + Team) ── */
+  var ctrl=el('div','dash-controls-bar');
+  var mfg=el('div','dash-filter-group');
+  mfg.appendChild(el('label',null,'Month'));
+  var msel=el('select');
+  var mo=el('option',null,'All Months');mo.value='All';msel.appendChild(mo);
+  (DATA.meta.fyMonths||[]).forEach(function(m){var o=el('option',null,m);o.value=m;msel.appendChild(o);});
+  msel.value=state.feesMonth;
+  msel.onchange=function(){state.feesMonth=this.value;renderFEES();};
+  mfg.appendChild(msel);
+  ctrl.appendChild(mfg);
+
+  var tfg=el('div','dash-filter-group');
+  tfg.appendChild(el('label',null,'Team'));
+  var tsel=el('select');
+  var to2=el('option',null,'All Teams');to2.value='All';tsel.appendChild(to2);
+  feesAllTeams().forEach(function(t){var o=el('option',null,t);o.value=t;tsel.appendChild(o);});
+  tsel.value=state.feesTeam;
+  tsel.onchange=function(){state.feesTeam=this.value;renderFEES();};
+  tfg.appendChild(tsel);
+  ctrl.appendChild(tfg);
+  pane.appendChild(ctrl);
+
+  var fees=getFEES();
+  var totalRev=sum(fees,function(r){return r.revenue;});
+  var totalAmt=sum(fees,function(r){return r.amount;});
+  var confRev=sum(fees.filter(function(r){return r.confirmed==='CONFIRMED';}),function(r){return r.revenue;});
+
+  /* ── KPI Cards ── */
+  var kRow=el('div','kpis');
+  kRow.appendChild(kpi(inrCr(totalRev),'Fee Revenue (Net)','primary'));
+  kRow.appendChild(kpi(inrCr(totalAmt),'Gross Amount','blue'));
+  kRow.appendChild(kpi(numFmt(fees.length),'Fee Transactions','green'));
+  kRow.appendChild(kpi(inrCr(confRev),'Confirmed Revenue','teal'));
+  kRow.appendChild(kpi(inrCr(avg(totalRev,fees.length)),'Avg Fee / Txn','violet'));
+  kRow.appendChild(kpi(inrCr(totalAmt-totalRev),'Net Deduction','red'));
+  pane.appendChild(kRow);
+
+  /* per-category KPI cards */
+  var cats=feesAllCategories();
+  if(cats.length>1){
+    var kRow2=el('div','kpis ins-product-kpis');
+    var colors=['blue','green','orange','violet','cyan','pink','primary','red'];
+    cats.forEach(function(cat,idx){
+      var catRows=fees.filter(function(r){return r.category===cat;});
+      var catRev=sum(catRows,function(r){return r.revenue;});
+      kRow2.appendChild(kpi(inrCr(catRev),cat+' Revenue',colors[idx%colors.length]));
+      kRow2.appendChild(kpi(numFmt(catRows.length),cat+' Txns',colors[idx%colors.length]));
+    });
+    pane.appendChild(kRow2);
+  }
+
+  pane.appendChild(makeViewBar(FEES_VIEWS,state.feesView,function(v){state.feesView=v;renderFEES();}));
+
+  if(state.feesView==='rm')      feesRmView(pane,fees,totalRev);
+  else if(state.feesView==='product') feesProductView(pane,fees,totalRev);
+  else if(state.feesView==='monthly') feesMonthlyView(pane,fees);
+  else feesRawView(pane,fees);
+}
+
+/* RM Analysis — category filter, X=team, Y=revenue */
+function feesRmView(pane,fees,totalRev){
+  var fbar=el('div','dash-controls-bar');
+  var fg=el('div','dash-filter-group');
+  fg.appendChild(el('label',null,'Category'));
+  var psel=el('select');
+  var pa=el('option',null,'All Categories');pa.value='All';psel.appendChild(pa);
+  feesAllCategories().forEach(function(c){var o=el('option',null,c);o.value=c;psel.appendChild(o);});
+  psel.value=state.feesProduct;
+  psel.onchange=function(){state.feesProduct=this.value;renderFEES();};
+  fg.appendChild(psel);
+  fbar.appendChild(fg);
+  pane.appendChild(fbar);
+
+  var filtered=state.feesProduct==='All'?fees:fees.filter(function(r){return r.category===state.feesProduct;});
+  var fRev=sum(filtered,function(r){return r.revenue;});
+
+  var byTeam=pivot(filtered,function(r){return teamOf(r.rm);},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}).sort(byRev);
+  var chartTitle='Fee Revenue by Team'+(state.feesProduct!=='All'?' — '+state.feesProduct:'');
+  var s1=sect(chartTitle,'bar-orange','fees-rm-chart');
+  s1.appendChild(cw('fees-rm-chart',350)); pane.appendChild(s1);
+  drawBar('fees-rm-chart',byTeam.map(function(r){return r.key;}),[
+    {label:'Revenue',data:byTeam.map(function(r){return r.rev;}),backgroundColor:byTeam.map(function(_,i){return ACCENTS[i%ACCENTS.length];})}
+  ],{money:true,legend:false,countData:byTeam.map(function(r){return r._count;})});
+
+  var s2=sect('Team Breakdown','bar-blue','fees-rm-table');
+  var tw=el('div','table-wrap tall');
+  tw.appendChild(buildTable([
+    {label:'Team',get:function(r){return r.key;}},
+    {label:'Txns',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
+    {label:'Gross',get:function(r){return r.amt;},fmt:inr,align:'right',sum:true},
+    {label:'Net Revenue',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
+    {label:'% Share',get:function(r){return fRev?r.rev/fRev:0;},fmt:pct,align:'right'}
+  ],byTeam,{grand:true,heat:3}));
+  s2.appendChild(tw); pane.appendChild(s2);
+}
+
+/* Product Breakdown — X=transaction type, Y=revenue, no filter */
+function feesProductView(pane,fees,totalRev){
+  var byTrans=pivot(fees,function(r){return r.transType;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}).sort(byRev);
+  var tot=totalRev||1;
+
+  var s1=sect('Revenue by Transaction Type','bar-orange','fees-trans-chart');
+  s1.appendChild(cw('fees-trans-chart',350)); pane.appendChild(s1);
+  drawBar('fees-trans-chart',byTrans.map(function(r){return r.key;}),[
+    {label:'Revenue',data:byTrans.map(function(r){return r.rev;}),backgroundColor:byTrans.map(function(_,i){return ACCENTS[i%ACCENTS.length];})}
+  ],{money:true,legend:false,countData:byTrans.map(function(r){return r._count;})});
+
+  var s2=sect('Transaction Type Breakdown','bar-blue','fees-trans-table');
+  var tw=el('div','table-wrap tall');
+  tw.appendChild(buildTable([
+    {label:'Transaction Type',get:function(r){return r.key;}},
+    {label:'Txns',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
+    {label:'Gross',get:function(r){return r.amt;},fmt:inr,align:'right',sum:true},
+    {label:'Revenue',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
+    {label:'% Share',get:function(r){return r.rev/tot;},fmt:pct,align:'right'}
+  ],byTrans,{grand:true,heat:3}));
+  s2.appendChild(tw); pane.appendChild(s2);
+}
+
+/* Monthly Trend — X=months, Y=revenue */
+function feesMonthlyView(pane,fees){
+  var months=uniqInFyOrder(fees.map(function(r){return r.month;}));
+  function msum(m){return sum(fees.filter(function(r){return r.month===m;}),function(r){return r.revenue;});}
+  function asum(m){return sum(fees.filter(function(r){return r.month===m;}),function(r){return r.amount;});}
+
+  var s1=sect('Monthly Fee Revenue Trend','bar-blue','fees-monthly-chart');
+  s1.appendChild(cw('fees-monthly-chart',350)); pane.appendChild(s1);
+  drawBar('fees-monthly-chart',months.map(mtdLabel),[
+    {label:'Net Revenue',data:months.map(msum),backgroundColor:ACCENTS[2]},
+    {label:'Gross Amount',data:months.map(asum),backgroundColor:ACCENTS[1]}
+  ],{money:true});
+
+  var byMonth=fyOrder(pivot(fees,function(r){return r.month;},{rev:function(r){return r.revenue;},amt:function(r){return r.amount;}}));
+  var s2=sect('Monthly Breakdown','bar-green','fees-monthly-table');
+  var tw=el('div','table-wrap tall');
   tw.appendChild(buildTable([
     {label:'Month',get:function(r){return mtdLabel(r.key);}},
     {label:'Txns',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
@@ -1287,27 +1523,76 @@ function feesRawView(pane,fees){
    PMS TAB
    ============================================================ */
 var PMS_VIEWS=[
-  {id:'rm',    label:'🏅 RM Analysis'},
-  {id:'asset', label:'📦 Asset Breakdown'},
-  {id:'monthly',label:'📅 Monthly Trend'},
-  {id:'raw',   label:'🔍 Raw Data'}
+  {id:'rm',    label:'RM Analysis'},
+  {id:'asset', label:'Asset Breakdown'},
+  {id:'monthly',label:'Monthly Trend'},
+  {id:'raw',   label:'Raw Data'}
 ];
+
+function pmsAllTeams(){
+  var t={}; (DATA.pms||[]).forEach(function(r){var tm=teamOf(r.rm);if(tm&&tm!=='Unassigned')t[tm]=1;});
+  return Object.keys(t).sort();
+}
+function pmsAllAssets(){
+  var t={}; (DATA.pms||[]).forEach(function(r){if(r.asset)t[r.asset]=1;});
+  return Object.keys(t).sort();
+}
 
 function renderPMS(){
   var pane=$('tab-pms'); pane.innerHTML='';
+
+  /* ── Controls bar (Month + Team) ── */
+  var ctrl=el('div','dash-controls-bar');
+  var mfg=el('div','dash-filter-group');
+  mfg.appendChild(el('label',null,'Month'));
+  var msel=el('select');
+  var mo=el('option',null,'All Months');mo.value='All';msel.appendChild(mo);
+  (DATA.meta.fyMonths||[]).forEach(function(m){var o=el('option',null,m);o.value=m;msel.appendChild(o);});
+  msel.value=state.pmsMonth;
+  msel.onchange=function(){state.pmsMonth=this.value;renderPMS();};
+  mfg.appendChild(msel);
+  ctrl.appendChild(mfg);
+
+  var tfg=el('div','dash-filter-group');
+  tfg.appendChild(el('label',null,'Team'));
+  var tsel=el('select');
+  var to2=el('option',null,'All Teams');to2.value='All';tsel.appendChild(to2);
+  pmsAllTeams().forEach(function(t){var o=el('option',null,t);o.value=t;tsel.appendChild(o);});
+  tsel.value=state.pmsTeam;
+  tsel.onchange=function(){state.pmsTeam=this.value;renderPMS();};
+  tfg.appendChild(tsel);
+  ctrl.appendChild(tfg);
+  pane.appendChild(ctrl);
+
   var pms=getPMS();
   var totalRev=sum(pms,function(r){return r.revenue;});
   var totalInv=sum(pms,function(r){return r.punchAmount;});
   var confRev=sum(pms.filter(function(r){return r.confirmed==='CONFIRMED';}),function(r){return r.revenue;});
 
-  pane.appendChild(kpiRow([
-    [inrCr(totalRev),'PMS Revenue','primary'],
-    [inrCr(totalInv),'Total Investment (Punch)','blue'],
-    [numFmt(pms.length),'Total Transactions','green'],
-    [inrCr(confRev),'Confirmed Revenue','teal'],
-    [inrCr(avg(totalRev,pms.length)),'Avg Revenue / Txn','cyan'],
-    [inrCr(avg(totalInv,pms.length)),'Avg Investment / Txn','orange']
-  ]));
+  /* ── KPI Cards ── */
+  var kRow=el('div','kpis');
+  kRow.appendChild(kpi(inrCr(totalRev),'PMS Revenue','primary'));
+  kRow.appendChild(kpi(inrCr(totalInv),'Total Investment','blue'));
+  kRow.appendChild(kpi(numFmt(pms.length),'Total Transactions','green'));
+  kRow.appendChild(kpi(inrCr(confRev),'Confirmed Revenue','teal'));
+  kRow.appendChild(kpi(inrCr(avg(totalRev,pms.length)),'Avg Revenue / Txn','cyan'));
+  kRow.appendChild(kpi(inrCr(avg(totalInv,pms.length)),'Avg Investment / Txn','orange'));
+  pane.appendChild(kRow);
+
+  /* per-asset-type KPI cards */
+  var assets=pmsAllAssets();
+  if(assets.length>1){
+    var kRow2=el('div','kpis ins-product-kpis');
+    var colors=['blue','green','orange','violet','cyan','pink','primary','red'];
+    assets.forEach(function(a,idx){
+      var aRows=pms.filter(function(r){return r.asset===a;});
+      var aRev=sum(aRows,function(r){return r.revenue;});
+      kRow2.appendChild(kpi(inrCr(aRev),a+' Revenue',colors[idx%colors.length]));
+      kRow2.appendChild(kpi(numFmt(aRows.length),a+' Txns',colors[idx%colors.length]));
+    });
+    pane.appendChild(kRow2);
+  }
+
   pane.appendChild(makeViewBar(PMS_VIEWS,state.pmsView,function(v){state.pmsView=v;renderPMS();}));
 
   if(state.pmsView==='rm')      pmsRmView(pane,pms,totalRev);
@@ -1316,57 +1601,40 @@ function renderPMS(){
   else pmsRawView(pane,pms);
 }
 
+/* RM Analysis — asset filter, X=team, Y=revenue */
 function pmsRmView(pane,pms,totalRev){
-  var byRM=assignRevRank(pivot(pms,function(r){return r.rm;},{rev:function(r){return r.revenue;},inv:function(r){return r.punchAmount;}}));
-  var tot=totalRev||1;
-  var teamSel=state.chartTeam;
+  var fbar=el('div','dash-controls-bar');
+  var fg=el('div','dash-filter-group');
+  fg.appendChild(el('label',null,'Asset Type'));
+  var psel=el('select');
+  var pa=el('option',null,'All Assets');pa.value='All';psel.appendChild(pa);
+  pmsAllAssets().forEach(function(a){var o=el('option',null,a);o.value=a;psel.appendChild(o);});
+  psel.value=state.pmsAssetFilter;
+  psel.onchange=function(){state.pmsAssetFilter=this.value;renderPMS();};
+  fg.appendChild(psel);
+  fbar.appendChild(fg);
+  pane.appendChild(fbar);
 
-  /* chart always ranked by Revenue (desc); title reflects team filter */
-  var byRev15=byRM.slice().sort(byRev).slice(0,15);
-  var chartTitle=(teamSel&&teamSel!=='All') ? 'RM Rankings — '+teamSel : 'Top 15 RMs by PMS Revenue';
+  var filtered=state.pmsAssetFilter==='All'?pms:pms.filter(function(r){return r.asset===state.pmsAssetFilter;});
+  var fRev=sum(filtered,function(r){return r.revenue;});
+
+  var byTeam=pivot(filtered,function(r){return teamOf(r.rm);},{rev:function(r){return r.revenue;},inv:function(r){return r.punchAmount;}}).sort(byRev);
+  var chartTitle='PMS Revenue by Team'+(state.pmsAssetFilter!=='All'?' — '+state.pmsAssetFilter:'');
   var s1=sect(chartTitle,'bar-violet','pms-rm-chart');
-  s1.appendChild(cw('pms-rm-chart',420)); pane.appendChild(s1);
-  drawHBar('pms-rm-chart',byRev15.map(function(r){return r.key;}),[
-    {label:'Revenue',data:byRev15.map(function(r){return r.rev;}),backgroundColor:ACCENTS[4]},
-    {label:'Investment',data:byRev15.map(function(r){return r.inv;}),backgroundColor:ACCENTS[1]}
-  ],{money:true});
+  s1.appendChild(cw('pms-rm-chart',350)); pane.appendChild(s1);
+  drawBar('pms-rm-chart',byTeam.map(function(r){return r.key;}),[
+    {label:'Revenue',data:byTeam.map(function(r){return r.rev;}),backgroundColor:byTeam.map(function(_,i){return ACCENTS[i%ACCENTS.length];})}
+  ],{money:true,legend:false,countData:byTeam.map(function(r){return r._count;})});
 
-  /* revenue by team */
-  teamRevChart(pane,pms,'pms-team-chart','bar-green');
-
-  /* full list — sortable columns */
-  if(!state.pmsRmSort) state.pmsRmSort={col:'rev',dir:-1};
-  var ss=state.pmsRmSort;
-  var sorted=byRM.slice().sort(function(a,b){
-    var va,vb;
-    if(ss.col==='rm'){ va=(a.key||'').toLowerCase(); vb=(b.key||'').toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
-    if(ss.col==='team'){ va=teamOf(a.key).toLowerCase(); vb=teamOf(b.key).toLowerCase(); return (va<vb?-1:va>vb?1:0)*ss.dir; }
-    if(ss.col==='count'){ va=a._count; vb=b._count; }
-    else if(ss.col==='inv'){ va=a.inv; vb=b.inv; }
-    else if(ss.col==='avg'){ va=avg(a.rev,a._count); vb=avg(b.rev,b._count); }
-    else { va=a.rev; vb=b.rev; }   /* rev, pct */
-    return (va-vb)*ss.dir;
-  });
-
-  var s2=sect('RM Rankings — Full List','bar-blue','pms-rm-table');
+  var s2=sect('Team Breakdown','bar-blue','pms-rm-table');
   var tw=el('div','table-wrap tall');
   tw.appendChild(buildTable([
-    {label:'#',   get:function(r){return r._rank;},align:'right',isRank:true},
-    {label:'RM',  sortKey:'rm',   get:function(r){return r.key;}},
-    {label:'Team',sortKey:'team', get:function(r){return teamOf(r.key);}},
-    {label:'Txns',sortKey:'count',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
-    {label:'Investment',sortKey:'inv',get:function(r){return r.inv;},fmt:inr,align:'right',sum:true},
-    {label:'Revenue',sortKey:'rev',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
-    {label:'% Total',sortKey:'pct',get:function(r){return r.rev/tot;},fmt:pct,align:'right'},
-    {label:'Avg/Txn',sortKey:'avg',get:function(r){return avg(r.rev,r._count);},fmt:inr,align:'right'}
-  ],sorted,{grand:true,heat:5,
-    sortState:{col:ss.col,dir:ss.dir},
-    onSort:function(k){
-      if(state.pmsRmSort.col===k) state.pmsRmSort.dir*=-1;
-      else state.pmsRmSort={col:k,dir:-1};
-      renderPMS();
-    }
-  }));
+    {label:'Team',get:function(r){return r.key;}},
+    {label:'Txns',get:function(r){return r._count;},fmt:numFmt,align:'right',sum:true},
+    {label:'Investment',get:function(r){return r.inv;},fmt:inr,align:'right',sum:true},
+    {label:'Revenue',get:function(r){return r.rev;},fmt:inr,align:'right',sum:true},
+    {label:'% Share',get:function(r){return fRev?r.rev/fRev:0;},fmt:pct,align:'right'}
+  ],byTeam,{grand:true,heat:3}));
   s2.appendChild(tw); pane.appendChild(s2);
 }
 
