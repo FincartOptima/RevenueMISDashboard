@@ -424,11 +424,19 @@ function renderDashboard(){
      always source them from the live current-month snapshot (rs.rows).
      MTD figures for a specific month come from that month's own snapshot,
      captured via DASHBOARD!E5 in extract.py. */
-  var snapRows=isYtd?rs.rows:((months[view.toUpperCase()]||{}).rows||rs.rows);
+  var snap=isYtd?rs:(months[view.toUpperCase()]||rs);
+  var snapRows=snap.rows||rs.rows;
   var allRows=(snapRows||[]).filter(function(r){return r.team&&r.team.toUpperCase()!=='B2B';});
   var teamFilter=state.dashTeam||'All';
   var fRows=teamFilter==='All'?allRows:allRows.filter(function(r){return r.team===teamFilter;});
-  function agg(field){return fRows.reduce(function(a,r){return a+(r[vk][field]||0);},0);}
+  /* Always sum individual rows (RMs + Pool) rather than trusting the
+     sheet's own "Overall" cell: for Revenue/Client this matches the
+     Overall row exactly, and for AUM/SIP/GT it's actually MORE accurate —
+     at least one team's Overall subtotal formula has a stale SUM range
+     that silently drops a member added after the formula was set up. */
+  function agg(field){
+    return fRows.reduce(function(a,r){return a+(r[vk][field]||0);},0);
+  }
   var periodLbl=isYtd?'YTD':(view+' — MTD');
 
   /* ── Controls bar ── */
@@ -2078,19 +2086,35 @@ function parseWorkbook(wb){
     Object.keys(groups).forEach(function(key){var st=groups[key];var a=[];for(var m=0;m<12;m++){var cv=cell(tr,st+m);a.push(key==='talktime'?talktimeHours(cv):num(cv));}rec[key]=a;});
     talk.push(rec);}
 
-  /* REVSUM rows (header already read) */
-  var revsum=[]; var revsumOverall={mtdTarget:0,mtdAch:0,ytdTarget:0,ytdAch:0};
+  /* REVSUM rows (header already read). Layout is repeating team blocks:
+     named RM rows, then a "Pool<Team>" row (unassigned/house business for
+     that team — a real contributor, NOT a subtotal), then a blank-name
+     team-subtotal row, ending in a final "Overall" grand-total row. Pool
+     rows carry no Team of their own, so it's carried forward from the
+     last named RM row above them in the same block. */
+  function revsumMetrics(rr,baseMtd,baseYtd){
+    return {
+      mtd:{revTarget:num(cell(rr,baseMtd)),revAch:num(cell(rr,baseMtd+1)),pct:num(cell(rr,baseMtd+2)),
+        cliTarget:num(cell(rr,baseMtd+3)),totalClients:num(cell(rr,baseMtd+4)),cliAcq:num(cell(rr,baseMtd+5)),
+        aumTarget:num(cell(rr,baseMtd+6)),totalAum:num(cell(rr,baseMtd+7)),mfNetSale:num(cell(rr,baseMtd+8)),pmsAif:num(cell(rr,baseMtd+9)),
+        sipTarget:num(cell(rr,baseMtd+10)),sipAdd:num(cell(rr,baseMtd+11)),gtTarget:num(cell(rr,baseMtd+12)),gtTime:talktimeHours(cell(rr,baseMtd+13))},
+      ytd:{revTarget:num(cell(rr,baseYtd)),revAch:num(cell(rr,baseYtd+1)),revDeff:num(cell(rr,baseYtd+2)),
+        cliTarget:num(cell(rr,baseYtd+3)),totalClients:num(cell(rr,baseYtd+4)),cliAcq:num(cell(rr,baseYtd+5)),
+        aumTarget:num(cell(rr,baseYtd+6)),totalAum:num(cell(rr,baseYtd+7)),mfNetSale:num(cell(rr,baseYtd+8)),pmsAif:num(cell(rr,baseYtd+9)),
+        sipTarget:num(cell(rr,baseYtd+10)),sipAdd:num(cell(rr,baseYtd+11)),gtTarget:num(cell(rr,baseYtd+12)),gtTime:talktimeHours(cell(rr,baseYtd+13))}
+    };
+  }
+  var revsum=[]; var revsumOverall=revsumMetrics([],7,22); var lastTeam='Unassigned';
   for(i=3;i<R.length;i++){var rr=R[i];if(!rr)continue;
-    var nm=sstr(cell(rr,3)); if(!nm||nm.toLowerCase().indexOf('pool')===0)continue;
+    var nm=sstr(cell(rr,3)); if(!nm)continue;   // blank name = team subtotal, not a contributor
     if(nm.toLowerCase().indexOf('overall')===0){
-      revsumOverall={mtdTarget:num(cell(rr,7)),mtdAch:num(cell(rr,8)),ytdTarget:num(cell(rr,22)),ytdAch:num(cell(rr,23))};
+      revsumOverall=revsumMetrics(rr,7,22);
       continue;}
-    if(typeof cell(rr,0)!=='number')continue;
-    revsum.push({sn:num(cell(rr,0)),empCode:sstr(cell(rr,1)),team:sstr(cell(rr,2))||'Unassigned',name:nm,level:sstr(cell(rr,5)),kra:sstr(cell(rr,6)),
-      mtd:{revTarget:num(cell(rr,7)),revAch:num(cell(rr,8)),pct:num(cell(rr,9)),cliTarget:num(cell(rr,10)),totalClients:num(cell(rr,11)),cliAcq:num(cell(rr,12)),
-        aumTarget:num(cell(rr,13)),totalAum:num(cell(rr,14)),mfNetSale:num(cell(rr,15)),pmsAif:num(cell(rr,16)),sipTarget:num(cell(rr,17)),sipAdd:num(cell(rr,18)),gtTarget:num(cell(rr,19)),gtTime:talktimeHours(cell(rr,20))},
-      ytd:{revTarget:num(cell(rr,22)),revAch:num(cell(rr,23)),revDeff:num(cell(rr,24)),cliTarget:num(cell(rr,25)),totalClients:num(cell(rr,26)),cliAcq:num(cell(rr,27)),
-        aumTarget:num(cell(rr,28)),totalAum:num(cell(rr,29)),mfNetSale:num(cell(rr,30)),pmsAif:num(cell(rr,31)),sipTarget:num(cell(rr,32)),sipAdd:num(cell(rr,33)),gtTarget:num(cell(rr,34)),gtTime:talktimeHours(cell(rr,35))}});}
+    var team=sstr(cell(rr,2));
+    if(team){lastTeam=team;}else{team=lastTeam;}   // Pool row — inherit the preceding RM's team
+    var rec=revsumMetrics(rr,7,22);
+    rec.sn=num(cell(rr,0));rec.empCode=sstr(cell(rr,1));rec.team=team;rec.name=nm;rec.level=sstr(cell(rr,5));rec.kra=sstr(cell(rr,6));
+    revsum.push(rec);}
 
   /* REVENUE REPORT MONTHLY / YTD — reconciled product-wise (different layouts) */
   function readReport(name,map){

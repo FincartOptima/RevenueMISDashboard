@@ -227,36 +227,76 @@ try:
 
     # -------- REVENUE SUMMARY V 2.0 --------
     print('Reading REVENUE SUMMARY...', end=' ', flush=True)
-    revsum_rows=[]
-    revsum_mtd_month=''
-    revsum_overall={'mtdTarget':0,'mtdAch':0,'ytdTarget':0,'ytdAch':0}
-    for i,row in enumerate(sheet_data(wb,'REVENUE SUMMARY V 2.0', ncols=37, last_col=4)):
-        def g(ix): return row[ix] if ix<len(row) else None
-        if i==0: revsum_mtd_month=s(g(3)); continue
-        if i<3: continue
-        nm=s(g(3))
-        if nm=='' or nm.lower().startswith('pool'): continue
-        if nm.lower().startswith('overall'):
-            revsum_overall={'mtdTarget':num(g(7)),'mtdAch':num(g(8)),'ytdTarget':num(g(22)),'ytdAch':num(g(23))}
-            continue
-        revsum_rows.append({
-            'sn':num(g(0)),'empCode':s(g(1)),'team':s(g(2)) or 'Unassigned',
-            'name':nm,'level':s(g(5)),'kra':s(g(6)),
+
+    def revsum_metrics(g, base_mtd, base_ytd):
+        """Read the 12 target/achievement metrics starting at 0-indexed
+        column `base_mtd` (MTD block) and `base_ytd` (YTD block, which is
+        always the MTD block's columns +15)."""
+        return {
             'mtd':{
-                'revTarget':num(g(7)),'revAch':num(g(8)),'pct':num(g(9)),
-                'cliTarget':num(g(10)),'totalClients':num(g(11)),'cliAcq':num(g(12)),
-                'aumTarget':num(g(13)),'totalAum':num(g(14)),'mfNetSale':num(g(15)),'pmsAif':num(g(16)),
-                'sipTarget':num(g(17)),'sipAdd':num(g(18)),'gtTarget':round(hms_to_hours(g(19)),3),'gtTime':round(hms_to_hours(g(20)),3)
+                'revTarget':num(g(base_mtd)),'revAch':num(g(base_mtd+1)),'pct':num(g(base_mtd+2)),
+                'cliTarget':num(g(base_mtd+3)),'totalClients':num(g(base_mtd+4)),'cliAcq':num(g(base_mtd+5)),
+                'aumTarget':num(g(base_mtd+6)),'totalAum':num(g(base_mtd+7)),'mfNetSale':num(g(base_mtd+8)),'pmsAif':num(g(base_mtd+9)),
+                'sipTarget':num(g(base_mtd+10)),'sipAdd':num(g(base_mtd+11)),'gtTarget':round(hms_to_hours(g(base_mtd+12)),3),'gtTime':round(hms_to_hours(g(base_mtd+13)),3)
             },
             'ytd':{
-                'revTarget':num(g(22)),'revAch':num(g(23)),'revDeff':num(g(24)),
-                'cliTarget':num(g(25)),'totalClients':num(g(26)),'cliAcq':num(g(27)),
-                'aumTarget':num(g(28)),'totalAum':num(g(29)),'mfNetSale':num(g(30)),'pmsAif':num(g(31)),
-                'sipTarget':num(g(32)),'sipAdd':num(g(33)),'gtTarget':round(hms_to_hours(g(34)),3),'gtTime':round(hms_to_hours(g(35)),3)
+                'revTarget':num(g(base_ytd)),'revAch':num(g(base_ytd+1)),'revDeff':num(g(base_ytd+2)),
+                'cliTarget':num(g(base_ytd+3)),'totalClients':num(g(base_ytd+4)),'cliAcq':num(g(base_ytd+5)),
+                'aumTarget':num(g(base_ytd+6)),'totalAum':num(g(base_ytd+7)),'mfNetSale':num(g(base_ytd+8)),'pmsAif':num(g(base_ytd+9)),
+                'sipTarget':num(g(base_ytd+10)),'sipAdd':num(g(base_ytd+11)),'gtTarget':round(hms_to_hours(g(base_ytd+12)),3),'gtTime':round(hms_to_hours(g(base_ytd+13)),3)
             }
-        })
+        }
+
+    # REVSUM is laid out as repeating team blocks: named RM rows, then a
+    # "Pool<Team>" row (unassigned/house business for that team — a real
+    # contributor, NOT a subtotal), then a blank-name team-subtotal row,
+    # ending in a final "Overall" grand-total row. Pool rows carry no Team
+    # of their own (column C is blank), so their team is carried forward
+    # from the last named RM row above them in the same block.
+    def read_revsum_snapshot():
+        """Read the REVSUM sheet's current live state and return (month_label, rows, overall)."""
+        rows_out=[]
+        overall_out=revsum_metrics(lambda ix: None, 7, 22)
+        month_lbl=''
+        last_team='Unassigned'
+        for i,row in enumerate(sheet_data(wb,'REVENUE SUMMARY V 2.0', ncols=37, last_col=4)):
+            def g(ix): return row[ix] if ix<len(row) else None
+            if i==0: month_lbl=s(g(3)); continue
+            if i<3: continue
+            nm=s(g(3))
+            if nm=='': continue   # blank-name row = team subtotal, not a contributor
+            if nm.lower().startswith('overall'):
+                overall_out=revsum_metrics(g, 7, 22)
+                continue
+            team=s(g(2))
+            if team: last_team=team
+            else: team=last_team   # Pool row — inherit the preceding RM's team
+            row_metrics=revsum_metrics(g, 7, 22)
+            row_metrics.update({'sn':num(g(0)),'empCode':s(g(1)),'team':team,'name':nm,'level':s(g(5)),'kra':s(g(6))})
+            rows_out.append(row_metrics)
+        return month_lbl, rows_out, overall_out
+
+    def revsum_sane(rows, overall):
+        """Reject a snapshot if any figure looks like a stale/garbage
+        recalculation (previously seen as values like -1.5e11) rather than
+        a real result. YTD AUM totals aggregate across ~70+ RMs and
+        legitimately reach into the hundreds of crores (~1e9-1e10), so the
+        bound has to sit comfortably above that, not just above revenue
+        scale figures."""
+        BOUND=1e10
+        vals=list(overall['mtd'].values())+list(overall['ytd'].values())
+        for r in rows:
+            vals.extend(r['mtd'].values()); vals.extend(r['ytd'].values())
+        return all(isinstance(v,(int,float)) and abs(v)<BOUND for v in vals)
+
+    def wait_for_calc(timeout=20):
+        waited=0.0
+        while xl.CalculationState!=0 and waited<timeout:
+            time.sleep(0.1); waited+=0.1
+
+    revsum_mtd_month, revsum_rows, revsum_overall = read_revsum_snapshot()
     print(f'{len(revsum_rows)} rows  ({time.time()-t0:.1f}s)', flush=True)
-    print(f'  Overall target: MTD={revsum_overall["mtdTarget"]}, YTD={revsum_overall["ytdTarget"]}', flush=True)
+    print(f'  Overall target: MTD={revsum_overall["mtd"]["revTarget"]}, YTD={revsum_overall["ytd"]["revTarget"]}', flush=True)
 
     # -------- Full 12-month REVSUM history via DASHBOARD!E5 --------
     # REVENUE SUMMARY V 2.0's 'MTD' columns are live formulas keyed off
@@ -268,53 +308,6 @@ try:
     # current month again. (A previous attempt at this left E5 mutated
     # for the REVENUE REPORT read afterward, which is what actually
     # produced garbage values — not an inherent COM/Excel limitation.)
-    def read_revsum_snapshot():
-        """Read the REVSUM sheet's current live state and return (month_label, rows, overall)."""
-        rows_out=[]
-        overall_out={'mtdTarget':0,'mtdAch':0,'ytdTarget':0,'ytdAch':0}
-        month_lbl=''
-        for i,row in enumerate(sheet_data(wb,'REVENUE SUMMARY V 2.0', ncols=37, last_col=4)):
-            def g(ix): return row[ix] if ix<len(row) else None
-            if i==0: month_lbl=s(g(3)); continue
-            if i<3: continue
-            nm=s(g(3))
-            if nm=='' or nm.lower().startswith('pool'): continue
-            if nm.lower().startswith('overall'):
-                overall_out={'mtdTarget':num(g(7)),'mtdAch':num(g(8)),'ytdTarget':num(g(22)),'ytdAch':num(g(23))}
-                continue
-            rows_out.append({
-                'sn':num(g(0)),'empCode':s(g(1)),'team':s(g(2)) or 'Unassigned',
-                'name':nm,'level':s(g(5)),'kra':s(g(6)),
-                'mtd':{
-                    'revTarget':num(g(7)),'revAch':num(g(8)),'pct':num(g(9)),
-                    'cliTarget':num(g(10)),'totalClients':num(g(11)),'cliAcq':num(g(12)),
-                    'aumTarget':num(g(13)),'totalAum':num(g(14)),'mfNetSale':num(g(15)),'pmsAif':num(g(16)),
-                    'sipTarget':num(g(17)),'sipAdd':num(g(18)),'gtTarget':round(hms_to_hours(g(19)),3),'gtTime':round(hms_to_hours(g(20)),3)
-                },
-                'ytd':{
-                    'revTarget':num(g(22)),'revAch':num(g(23)),'revDeff':num(g(24)),
-                    'cliTarget':num(g(25)),'totalClients':num(g(26)),'cliAcq':num(g(27)),
-                    'aumTarget':num(g(28)),'totalAum':num(g(29)),'mfNetSale':num(g(30)),'pmsAif':num(g(31)),
-                    'sipTarget':num(g(32)),'sipAdd':num(g(33)),'gtTarget':round(hms_to_hours(g(34)),3),'gtTime':round(hms_to_hours(g(35)),3)
-                }
-            })
-        return month_lbl, rows_out, overall_out
-
-    def revsum_sane(rows, overall):
-        """Reject a snapshot if any figure looks like a stale/garbage
-        recalculation (previously seen as values like -1.5e11) rather than
-        a real result."""
-        BOUND=1e9
-        vals=[overall.get('mtdTarget',0), overall.get('mtdAch',0), overall.get('ytdTarget',0), overall.get('ytdAch',0)]
-        for r in rows:
-            vals.extend(r['mtd'].values()); vals.extend(r['ytd'].values())
-        return all(isinstance(v,(int,float)) and abs(v)<BOUND for v in vals)
-
-    def wait_for_calc(timeout=20):
-        waited=0.0
-        while xl.CalculationState!=0 and waited<timeout:
-            time.sleep(0.1); waited+=0.1
-
     key=revsum_mtd_month.upper() if revsum_mtd_month else 'CURRENT'
     revsum_by_month={key:{'rows':revsum_rows,'overallTarget':revsum_overall}}
     try:
