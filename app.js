@@ -6,7 +6,7 @@
 "use strict";
 
 var FY_SERIALS=(function(){var d=new Date(),y=d.getMonth()>=3?d.getFullYear():d.getFullYear()-1,s=[];for(var i=0;i<12;i++){var m=(3+i)%12;s.push(Math.round((new Date(Date.UTC(y+(m<3?1:0),m,1))-new Date(Date.UTC(1899,11,30)))/86400000));}return s;})();
-var ACCENTS = ['#4f46e5','#0891b2','#059669','#ec4899','#8b5cf6','#d97706','#ef4444','#14b8a6','#f97316','#a855f7','#0ea5e9','#84cc16'];
+var ACCENTS = ['#78909C','#546E7A','#00897B','#A6771F','#37474F','#8D6E63','#9C4147','#7E6A8C','#607D8B','#455A64'];
 var MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 /* ─── state ─── */
@@ -14,7 +14,7 @@ var DATA = null;
 var RM2TEAM = {};
 var charts = {};
 var state = {
-  tab:'dashboard', month:'All', chartTeam:'All',
+  tab:'dashboard', chartTeam:'All',
   dashRevView:'mtd', dashMetric:'revenue', dashTeam:'All', dashMonth:'mtd',
   talkMonth:'YTD', revsumView:'mtd', revsumTeam:'All',
   insView:'rm', feesView:'rm', pmsView:'rm', talkView:'team',
@@ -62,6 +62,16 @@ function pct(n){ return (n*100).toFixed(1)+'%'; }
 function hours(h){ var hh=Math.floor(h); var mm=Math.round((h-hh)*60); return hh+'h '+(mm<10?'0':'')+mm+'m'; }
 function avg(tot,n){ return n?Math.round(tot/n):0; }
 
+/* Status badge — case-insensitive keyword match to a semantic tone */
+function badge(text){
+  var s=(''+(text||'')).toLowerCase();
+  var cls='badge-neutral';
+  if(s==='issued'||s==='confirmed') cls='badge-positive';
+  else if(s==='cancelled'||s==='duplicate') cls='badge-negative';
+  else if(s==='pending') cls='badge-warning';
+  return '<span class="badge '+cls+'">'+(text||'—')+'</span>';
+}
+
 /* MTD label — appends " — MTD" if month matches current calendar month */
 function mtdLabel(m){
   var now=new Date();
@@ -69,10 +79,7 @@ function mtdLabel(m){
   return m===cur?m+' — MTD':m;
 }
 
-/* Achievement colour helpers */
-function achBarColor(ratio){
-  return ratio>=0.8?'rgba(5,150,105,.85)':ratio>=0.5?'rgba(217,119,6,.85)':'rgba(225,29,72,.85)';
-}
+/* Achievement colour helper */
 function achRowCls(ratio){
   return ratio>=0.8?'heat-high':ratio>=0.5?'heat-low':'heat-vlow';
 }
@@ -281,7 +288,7 @@ function drawBar(id,labels,datasets,opts){
           display:!tooMany&&opts.datalabels!==false,
           anchor:'end',align:'end',offset:2,
           font:{size:9,weight:'bold'},
-          color:'#374151',
+          color:'#263238',
           formatter:function(v){return opts.money?inrCr(v):(v>0?numFmt(v):'');}
         },
         tooltip:{callbacks:{label:function(c){
@@ -314,7 +321,7 @@ function drawHBar(id,labels,datasets,opts){
           display:opts.datalabels!==false,
           anchor:'end',align:'end',offset:2,
           font:{size:9,weight:'bold'},
-          color:'#374151',
+          color:'#263238',
           formatter:function(v){return opts.money?inrCr(v):(v>0?numFmt(v):'');}
         },
         tooltip:{callbacks:{label:function(c){
@@ -359,29 +366,22 @@ function drawDoughnut(id,labels,data,opts){
   });
 }
 
-/* achievement legend HTML element */
-function achLegendEl(){
-  var d=el('div','ach-legend');
-  d.innerHTML='<span class="al-dot" style="background:#059669"></span>≥80% &nbsp;'+
-    '<span class="al-dot" style="background:#d97706"></span>50–79% &nbsp;'+
-    '<span class="al-dot" style="background:#e11d48"></span>&lt;50%';
-  return d;
-}
-
 /* ============================================================
    TABS
    ============================================================ */
 var TABS=[
-  {id:'dashboard',label:'📊 Revenue Summary',cls:'t-dash'},
-  {id:'ins',label:'🛡️ INS — Insurance'},
-  {id:'fees',label:'💰 FEES'},
-  {id:'pms',label:'📈 PMS'},
-  {id:'talk',label:'📞 Talk — RM Performance'}
+  {id:'dashboard',label:'Revenue Summary'},
+  {id:'ins',label:'INS — Insurance'},
+  {id:'fees',label:'FEES'},
+  {id:'pms',label:'PMS'},
+  {id:'talk',label:'Talk — RM Performance'}
 ];
 function renderTabs(){
   var c=$('tabs'); c.innerHTML='';
-  TABS.forEach(function(t){
-    var b=el('button','tab '+(t.cls||'')+(state.tab===t.id?' active':''),t.label);
+  TABS.forEach(function(t,i){
+    var b=el('button','tab'+(state.tab===t.id?' active':''));
+    b.appendChild(el('span','tab-no',(i+1<10?'0':'')+(i+1)));
+    b.appendChild(el('span','tab-lbl',t.label));
     b.onclick=function(){setTab(t.id);};
     c.appendChild(b);
   });
@@ -392,7 +392,6 @@ function setTab(id){
   $('tab-'+id).classList.add('active');
   renderTabs();
   /* show header filters only for talk tab; dashboard/ins/fees/pms have own page-level controls */
-  $('header-dash-filters').style.display='none';
   $('header-talk-filters').style.display=id==='talk'?'':'none';
   renderActive();
 }
@@ -540,7 +539,7 @@ function renderDashboard(){
     type:'bar',
     data:{labels:labels,datasets:[{
       label:curM.label,data:values,
-      backgroundColor:'rgba(79,70,229,0.85)',borderColor:'rgba(79,70,229,1)',borderWidth:1
+      backgroundColor:'rgba(120,144,156,0.85)',borderColor:'rgba(84,110,122,1)',borderWidth:1
     }]},
     options:{
       responsive:true,maintainAspectRatio:false,
@@ -548,7 +547,7 @@ function renderDashboard(){
         legend:{display:false},
         datalabels:{
           display:labels.length<=20,anchor:'end',align:'end',offset:2,
-          font:{size:9,weight:'bold'},color:'#374151',
+          font:{size:9,weight:'bold'},color:'#263238',
           formatter:function(v){return curM.fmt(v);}
         }
       },
@@ -1101,6 +1100,7 @@ function insRawView(pane,ins){
       COLS.forEach(function(c){
         var td=document.createElement('td'); var v=c.fmt(r);
         if(c.type==='num'){td.style.textAlign='right'; td.textContent=inr(v);}
+        else if(c.key==='status'){td.innerHTML=badge(v);}
         else{td.textContent=v;}
         tr.appendChild(td);
       });
@@ -1733,7 +1733,7 @@ function pmsRawView(pane,pms){
       {label:'Month',get:function(r){return r.month;}},
       {label:'Investment',get:function(r){return r.punchAmount;},fmt:inr,align:'right'},
       {label:'Revenue',get:function(r){return r.revenue;},fmt:inr,align:'right'},
-      {label:'Status',get:function(r){return r.confirmed;}}
+      {label:'Status',get:function(r){return r.confirmed;},fmt:badge}
     ],data,{}));
     tbody.appendChild(tw);
   }
@@ -1747,10 +1747,10 @@ function pmsRawView(pane,pms){
    TALK TAB — all 5 metric groups in chart + table form
    ============================================================ */
 var TALK_VIEWS=[
-  {id:'team',    label:'👥 Team Summary'},
-  {id:'rm',      label:'🏅 RM Rankings'},
-  {id:'monthly', label:'📅 Monthly Trend'},
-  {id:'talktime',label:'⏱️ Talktime'}
+  {id:'team',    label:'Team Summary'},
+  {id:'rm',      label:'RM Rankings'},
+  {id:'monthly', label:'Monthly Trend'},
+  {id:'talktime',label:'Talktime'}
 ];
 var TALK_METRICS=[
   {id:'netSale',label:'Net Sale',money:true},
@@ -2117,18 +2117,7 @@ function parseWorkbook(wb){
    FILTERS & BOOT
    ============================================================ */
 function populateMonthFilter(){
-  var allMonths=[];
-  (DATA.ins||[]).forEach(function(r){allMonths.push(r.month);});
-  (DATA.fees||[]).forEach(function(r){allMonths.push(r.month);});
-  (DATA.pms||[]).forEach(function(r){allMonths.push(r.month);});
-  var months=uniqInFyOrder(allMonths);
-
-  var sel=$('filter-month'); sel.innerHTML='';
-  var ao=el('option',null,'All Months'); ao.value='All'; sel.appendChild(ao);
-  months.forEach(function(m){var o=el('option',null,mtdLabel(m));o.value=m;sel.appendChild(o);});
-  sel.value=state.month;
-
-  /* team filter */
+  /* team filter (Talk tab) */
   var tsel=$('filter-chart-team'); tsel.innerHTML='';
   var to=el('option',null,'All Teams'); to.value='All'; tsel.appendChild(to);
   allTeams().forEach(function(t){var o=el('option',null,t);o.value=t;tsel.appendChild(o);});
@@ -2142,7 +2131,6 @@ function populateMonthFilter(){
 }
 
 function bindFilters(){
-  $('filter-month').onchange=function(){state.month=this.value;renderActive();};
   $('filter-chart-team').onchange=function(){state.chartTeam=this.value;renderActive();};
   $('filter-talkmonth').onchange=function(){state.talkMonth=this.value;renderActive();};
   $('reupload-file').onchange=handleUpload;
@@ -2159,7 +2147,7 @@ function handleUpload(e){
         cellFormula:false,cellHTML:false,cellDates:false
       });
       DATA=parseWorkbook(wb);
-      buildRmTeam(); populateMonthFilter(); state.month='All'; state.chartTeam='All';
+      buildRmTeam(); populateMonthFilter(); state.chartTeam='All';
       renderActive();
     }catch(err){alert('Could not parse file: '+err.message);}
   };
@@ -2222,15 +2210,15 @@ async function boot(){
         DATA=window.REVENUE_DATA;
         await new Promise(function(r){setTimeout(r,900);});
       }else{
-        setStatus('<span style="color:#ef4444;font-weight:600">'+err.message+'</span><br>'
-          +'<small style="color:var(--muted)">Push the .xlsb to GitHub or run <code>python extract.py</code> locally.</small>');
+        setStatus('<span style="color:#EF9A9A;font-weight:600">'+err.message+'</span><br>'
+          +'<small style="color:#90A4AE">Push the .xlsb to GitHub or run <code>python extract.py</code> locally.</small>');
         return;
       }
     }
   }else if(window.REVENUE_DATA){
     DATA=window.REVENUE_DATA;
   }else{
-    setStatus('<span style="color:#ef4444">No data source. Set GH.owner/GH.repo in app.js or run extract.py.</span>');
+    setStatus('<span style="color:#EF9A9A">No data source. Set GH.owner/GH.repo in app.js or run extract.py.</span>');
     return;
   }
 
@@ -2290,10 +2278,10 @@ var TABLE_INFO={
     source:'REVENUE SUMMARY V 2.0 sheet'},
 
   /* INS */
-  'ins-rm-chart':{title:'Top 15 RMs by Insurance Revenue',
-    desc:'Horizontal bar chart of top 15 RMs ranked by INS revenue. Shows Revenue and Premium side-by-side.',
-    cols:'col 2 RmName · col 27 Premium · col 52 REVENUE (post-confirmation revenue). B2C only (col 1).',
-    source:'INS sheet'},
+  'ins-rm-chart':{title:'Insurance Revenue by Team',
+    desc:'Bar chart of INS revenue grouped by team. Use the Product Type filter above to narrow to a single insurance type.',
+    cols:'col 2 RmName → Team (Talk sheet) · col 11 InsuranceType (filter) · col 52 REVENUE (post-confirmation revenue). B2C only (col 1).',
+    source:'INS sheet + Talk sheet'},
   'ins-team-chart':{title:'Insurance Revenue by Team',
     desc:'Total INS revenue aggregated per team. Team is resolved from each RM via the Talk sheet.',
     cols:'col 2 RmName → Team (Talk sheet) · col 52 REVENUE.',
@@ -2348,10 +2336,10 @@ var TABLE_INFO={
     source:'INS sheet'},
 
   /* FEES */
-  'fees-rm-chart':{title:'Top 15 RMs by Fee Revenue',
-    desc:'Horizontal bar chart of top 15 RMs ranked by Net Revenue, showing Gross Amount alongside.',
-    cols:'col 2 RmName · col 14 Amount (gross) · col 33 REVENUE (net).',
-    source:'FEES sheet'},
+  'fees-rm-chart':{title:'Fee Revenue by Team',
+    desc:'Bar chart of Fee revenue grouped by team. Use the Category filter above to narrow to a single fee category.',
+    cols:'col 2 RmName → Team (Talk sheet) · col 10 Category (filter) · col 33 REVENUE (net).',
+    source:'FEES sheet + Talk sheet'},
   'fees-team-chart':{title:'Fee Revenue by Team',
     desc:'Total FEES net revenue aggregated per team. Team is resolved from each RM via the Talk sheet.',
     cols:'col 2 RmName → Team (Talk sheet) · col 33 REVENUE.',
@@ -2390,10 +2378,10 @@ var TABLE_INFO={
     source:'FEES sheet'},
 
   /* PMS */
-  'pms-rm-chart':{title:'Top 15 RMs by PMS Revenue',
-    desc:'Horizontal bars of top 15 RMs ranked by PMS revenue with Investment (Punch Amount) alongside.',
-    cols:'col 2 RM · col 16 Punch Amount · col 33 REVENUE.',
-    source:'PMS sheet'},
+  'pms-rm-chart':{title:'PMS Revenue by Team',
+    desc:'Bar chart of PMS revenue grouped by team. Use the Asset Type filter above to narrow to a single asset type.',
+    cols:'col 2 RM → Team (Talk sheet) · col 8 Asset (filter) · col 33 REVENUE.',
+    source:'PMS sheet + Talk sheet'},
   'pms-team-chart':{title:'PMS Revenue by Team',
     desc:'Total PMS revenue aggregated per team. Team is resolved from each RM via the Talk sheet.',
     cols:'col 2 RM → Team (Talk sheet) · col 33 REVENUE.',
@@ -2504,7 +2492,7 @@ function showInfoPopup(key){
   if(!info)return;
   var overlay=document.createElement('div'); overlay.className='info-overlay';
   var popup=document.createElement('div'); popup.className='info-popup';
-  var noteHtml=info.note?'<div class="info-label" style="color:#b45309">⚠ Methodology Note</div><p style="color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;margin-top:4px;font-size:12px">'+info.note+'</p>':'';
+  var noteHtml=info.note?'<div class="info-label" style="color:var(--slate-status)">⚠ Methodology Note</div><p style="color:var(--slate-status);background:var(--slate-status-bg);border:1px solid var(--slate-status);padding:8px 10px;margin-top:4px;font-size:12px">'+info.note+'</p>':'';
   popup.innerHTML='<button class="close-info">&times;</button>'+
     '<h3>'+info.title+'</h3>'+
     '<p>'+info.desc+'</p>'+
