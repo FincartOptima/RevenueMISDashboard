@@ -15,7 +15,7 @@ var RM2TEAM = {};
 var charts = {};
 var state = {
   tab:'dashboard', chartTeam:'All',
-  dashRevView:'mtd', dashMetric:'revenue', dashTeam:'All', dashMonth:'mtd',
+  dashRevView:'mtd', dashMetric:'revenue', dashTeam:'All',
   talkMonth:'YTD', revsumView:'mtd', revsumTeam:'All',
   insView:'rm', feesView:'rm', pmsView:'rm', talkView:'team',
   talkMetric:'netSale',
@@ -409,41 +409,44 @@ function renderActive(){
    ============================================================ */
 function renderDashboard(){
   var rs=DATA.revsum;
-  var view=state.dashRevView||'mtd';
-  var vk=view;
-  var allRows=(rs.rows||[]).filter(function(r){return r.team&&r.team.toUpperCase()!=='B2B';});
+  var months=rs.months||{};
+  var fyMonthsAll=DATA.meta.fyMonths||[];
+  if(!state.dashRevView||state.dashRevView==='mtd'){
+    /* first render: default to whichever FY month matches the live current month */
+    var mtdUpDef=(rs.mtdMonth||'').toUpperCase();
+    var match=fyMonthsAll.filter(function(m){return m.toUpperCase()===mtdUpDef;})[0];
+    state.dashRevView=match||'ytd';
+  }
+  var view=state.dashRevView;   /* 'ytd' or a specific FY month string, e.g. 'Apr-2026' */
+  var isYtd=view==='ytd';
+  var vk=isYtd?'ytd':'mtd';
+  /* YTD figures are "as of today" regardless of which month is selected, so
+     always source them from the live current-month snapshot (rs.rows).
+     MTD figures for a specific month come from that month's own snapshot,
+     captured via DASHBOARD!E5 in extract.py. */
+  var snapRows=isYtd?rs.rows:((months[view.toUpperCase()]||{}).rows||rs.rows);
+  var allRows=(snapRows||[]).filter(function(r){return r.team&&r.team.toUpperCase()!=='B2B';});
   var teamFilter=state.dashTeam||'All';
   var fRows=teamFilter==='All'?allRows:allRows.filter(function(r){return r.team===teamFilter;});
   function agg(field){return fRows.reduce(function(a,r){return a+(r[vk][field]||0);},0);}
-  var periodLbl=view==='ytd'?'YTD':((rs.mtdMonth||'MTD')+' — MTD');
+  var periodLbl=isYtd?'YTD':(view+' — MTD');
 
   /* ── Controls bar ── */
   var ctrl=$('dash-controls'); ctrl.innerHTML='';
   var bar=el('div','dash-controls-bar');
 
   var mfg=el('div','dash-filter-group');
-  mfg.appendChild(el('label',null,'Month'));
+  mfg.appendChild(el('label',null,'Period'));
   var msel=el('select');
-  var mo=el('option',null,'All Months (YTD)');mo.value='ytd';msel.appendChild(mo);
-  var fyMonths=DATA.meta.fyMonths||[];
-  var mtdMo=(rs.mtdMonth||'').toUpperCase();
-  fyMonths.forEach(function(m){
-    var lbl=m.toUpperCase()===mtdMo?m+' — MTD':m;
-    var o=el('option',null,lbl);o.value=m;msel.appendChild(o);
+  var mtdUp=(rs.mtdMonth||'').toUpperCase();
+  fyMonthsAll.forEach(function(m){
+    var has=!!months[m.toUpperCase()];
+    var lbl=(m.toUpperCase()===mtdUp?m+' — MTD':m)+(has?'':' (no data)');
+    var o=el('option',null,lbl);o.value=m;o.disabled=!has;msel.appendChild(o);
   });
-  var dashMonth=state.dashMonth;
-  if(!dashMonth||dashMonth==='mtd'){
-    var mtdUp=(rs.mtdMonth||'').toUpperCase();
-    dashMonth='ytd';
-    for(var fi=0;fi<fyMonths.length;fi++){if(fyMonths[fi].toUpperCase()===mtdUp){dashMonth=fyMonths[fi];break;}}
-  }
-  msel.value=dashMonth==='ytd'?'ytd':dashMonth;
-  msel.onchange=function(){
-    var v=this.value;
-    if(v==='ytd'){state.dashRevView='ytd';state.dashMonth='ytd';}
-    else{state.dashRevView='mtd';state.dashMonth=v;}
-    renderDashboard();
-  };
+  var moY=el('option',null,'Full Year — YTD');moY.value='ytd';msel.appendChild(moY);
+  msel.value=isYtd?'ytd':view;
+  msel.onchange=function(){state.dashRevView=this.value;renderDashboard();};
   mfg.appendChild(msel);
   bar.appendChild(mfg);
 

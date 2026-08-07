@@ -258,9 +258,18 @@ try:
     print(f'{len(revsum_rows)} rows  ({time.time()-t0:.1f}s)', flush=True)
     print(f'  Overall target: MTD={revsum_overall["mtdTarget"]}, YTD={revsum_overall["ytdTarget"]}', flush=True)
 
-    # -------- MULTI-MONTH REVSUM via Dashboard E5 --------
+    # -------- Full 12-month REVSUM history via DASHBOARD!E5 --------
+    # REVENUE SUMMARY V 2.0's 'MTD' columns are live formulas keyed off
+    # DASHBOARD!E5 (a month-label cell — see D1's formula ='DASHBOARD!$E$5).
+    # 'REVENUE REPORT MONTHLY' (read further below) is driven by the same
+    # cell. We step E5 through each FY month, force a full recalculation,
+    # and capture a snapshot for that month — then restore E5's original
+    # value before reading anything else, so later reads see the true
+    # current month again. (A previous attempt at this left E5 mutated
+    # for the REVENUE REPORT read afterward, which is what actually
+    # produced garbage values — not an inherent COM/Excel limitation.)
     def read_revsum_snapshot():
-        """Read current REVSUM sheet state and return (month_label, rows, overall)."""
+        """Read the REVSUM sheet's current live state and return (month_label, rows, overall)."""
         rows_out=[]
         overall_out={'mtdTarget':0,'mtdAch':0,'ytdTarget':0,'ytdAch':0}
         month_lbl=''
@@ -272,12 +281,6 @@ try:
             if nm=='' or nm.lower().startswith('pool'): continue
             if nm.lower().startswith('overall'):
                 overall_out={'mtdTarget':num(g(7)),'mtdAch':num(g(8)),'ytdTarget':num(g(22)),'ytdAch':num(g(23))}
-                continue
-            if isinstance(g(0), (int,float)) or s(g(0)).isdigit():
-                pass  # has serial number = data row
-            elif s(g(0))=='' and nm!='':
-                pass  # blank sn but has name = data row
-            else:
                 continue
             rows_out.append({
                 'sn':num(g(0)),'empCode':s(g(1)),'team':s(g(2)) or 'Unassigned',
@@ -297,9 +300,55 @@ try:
             })
         return month_lbl, rows_out, overall_out
 
+    def revsum_sane(rows, overall):
+        """Reject a snapshot if any figure looks like a stale/garbage
+        recalculation (previously seen as values like -1.5e11) rather than
+        a real result."""
+        BOUND=1e9
+        vals=[overall.get('mtdTarget',0), overall.get('mtdAch',0), overall.get('ytdTarget',0), overall.get('ytdAch',0)]
+        for r in rows:
+            vals.extend(r['mtd'].values()); vals.extend(r['ytd'].values())
+        return all(isinstance(v,(int,float)) and abs(v)<BOUND for v in vals)
+
+    def wait_for_calc(timeout=20):
+        waited=0.0
+        while xl.CalculationState!=0 and waited<timeout:
+            time.sleep(0.1); waited+=0.1
+
     key=revsum_mtd_month.upper() if revsum_mtd_month else 'CURRENT'
     revsum_by_month={key:{'rows':revsum_rows,'overallTarget':revsum_overall}}
-    print(f'  Using current month REVSUM ({key})  ({time.time()-t0:.1f}s)', flush=True)
+    try:
+        dash_ws=wb.Sheets('DASHBOARD')
+        e5=dash_ws.Range('E5')
+        orig_e5=e5.Value
+        orig_fmt=e5.NumberFormat
+        # E5 holds the month as literal TEXT (e.g. "APR-2026"). Writing a plain
+        # string via COM without forcing Text format first lets Excel's input
+        # parser silently reinterpret "AUG-2026" as an actual date — which
+        # breaks every text-keyed SUMIFS/lookup downstream and is what produced
+        # garbage achievement figures in earlier attempts at this. Forcing '@'
+        # (Text) number format before each write keeps it a literal string.
+        e5.NumberFormat='@'
+        print('Reading full-year REVSUM history via DASHBOARD!E5...', flush=True)
+        for m in FY_MONTHS:
+            mkey=m.upper()
+            if mkey==key: continue   # already have the current month, from the proven main read above
+            e5.Value=mkey
+            xl.Calculate()
+            wait_for_calc()
+            m_lbl, m_rows, m_overall = read_revsum_snapshot()
+            if revsum_sane(m_rows, m_overall):
+                revsum_by_month[mkey]={'rows':m_rows,'overallTarget':m_overall}
+                print(f'  {mkey}: ok ({len(m_rows)} rows)', flush=True)
+            else:
+                print(f'  {mkey}: SKIPPED (implausible recalculation result)', flush=True)
+        e5.Value=orig_e5
+        e5.NumberFormat=orig_fmt
+        xl.Calculate()
+        wait_for_calc()
+    except Exception as ex:
+        print(f'  Multi-month REVSUM skipped: {ex}', flush=True)
+    print(f'  REVSUM months captured: {sorted(revsum_by_month.keys())}  ({time.time()-t0:.1f}s)', flush=True)
 
     # -------- REVENUE REPORT MONTHLY / YTD (reconciled product-wise) --------
     # Column layouts differ between the two sheets:
