@@ -37,14 +37,6 @@ def num(v):
     try: return float(sv)
     except: return 0.0
 
-def num_excel_sum(v):
-    """Numeric-only extraction that mirrors Excel's SUM() semantics —
-    ignores text-formatted numbers (e.g. '1242775.00' stored as text).
-    Users validate against Excel's SUM in the source sheet, so text-numbers
-    have to be excluded to match those reference totals; otherwise premium
-    totals over-count by picking up entries Excel itself treats as blank."""
-    return float(v) if isinstance(v,(int,float)) else 0.0
-
 def s(v):
     if v is None: return ''
     if hasattr(v,'hour'): return ''          # datetime/pywintypes time cell
@@ -163,7 +155,7 @@ try:
             'category':s(g(10)) or 'Unknown',
             'insType':s(g(11)) or 'Unknown',
             'partner':s(g(14)) or 'Unknown',
-            'premium':num_excel_sum(g(27)),'createDate':iso_date(g(47)),
+            'premium':num(g(27)),'createDate':iso_date(g(47)),
             'month':s(g(48)),'confirmed':s(g(50)),
             'type':s(g(51)) or 'Unknown','revenue':num(g(52)),
             'pct':num(g(54)),'teamLeader':s(g(56)),

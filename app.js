@@ -42,11 +42,6 @@ var GH = {
 function $(id){ return document.getElementById(id); }
 function el(tag,cls,html){ var e=document.createElement(tag); if(cls)e.className=cls; if(html!=null)e.innerHTML=html; return e; }
 function num(v){ if(v==null)return 0; if(typeof v==='number')return v; var s=(''+v).replace(/,/g,'').trim(); var f=parseFloat(s); return isNaN(f)?0:f; }
-/* Numeric-only variant that mirrors Excel SUM() — ignores text-formatted
-   numbers so extraction matches the totals users see when they SUM in
-   the source sheet. Used for INS Premium, where ~2/3 of cells are
-   text-formatted but should be treated as blank per Excel semantics. */
-function numExcelSum(v){ return typeof v==='number'?v:0; }
 
 function inGroup(n){
   var neg=n<0; n=Math.abs(Math.round(n));
@@ -2059,7 +2054,7 @@ function parseWorkbook(wb){
     var mo=sstr(cell(r,48)); if(mo&&fyM.indexOf(mo)<0)continue;
     ins.push({dtype:sstr(cell(r,1))||'B2C',rm:sstr(cell(r,2)),client:sstr(cell(r,3)),
       platform:sstr(cell(r,8))||'Unknown',category:sstr(cell(r,10))||'Unknown',insType:sstr(cell(r,11))||'Unknown',
-      partner:sstr(cell(r,14))||'Unknown',premium:numExcelSum(cell(r,27)),createDate:serToIsoDate(cell(r,47)),month:mo,confirmed:sstr(cell(r,50)),
+      partner:sstr(cell(r,14))||'Unknown',premium:num(cell(r,27)),createDate:serToIsoDate(cell(r,47)),month:mo,confirmed:sstr(cell(r,50)),
       type:sstr(cell(r,51))||'Unknown',revenue:num(cell(r,52)),pct:num(cell(r,54)),
       teamLeader:sstr(cell(r,56)),status:sstr(cell(r,63))||'Unknown'});}
 
