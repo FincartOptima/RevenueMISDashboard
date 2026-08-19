@@ -420,11 +420,17 @@ function renderDashboard(){
   var view=state.dashRevView;   /* 'ytd' or a specific FY month string, e.g. 'Apr-2026' */
   var isYtd=view==='ytd';
   var vk=isYtd?'ytd':'mtd';
-  /* YTD figures are "as of today" regardless of which month is selected, so
-     always source them from the live current-month snapshot (rs.rows).
-     MTD figures for a specific month come from that month's own snapshot,
-     captured via DASHBOARD!E5 in extract.py. */
-  var snap=isYtd?rs:(months[view.toUpperCase()]||rs);
+  var snap;
+  if(isYtd){
+    var latestSnap=rs;
+    for(var fi=fyMonthsAll.length-1;fi>=0;fi--){
+      var mk=fyMonthsAll[fi].toUpperCase();
+      if(months[mk]){latestSnap=months[mk];break;}
+    }
+    snap=latestSnap;
+  }else{
+    snap=months[view.toUpperCase()]||rs;
+  }
   var snapRows=snap.rows||rs.rows;
   var allRows=(snapRows||[]).filter(function(r){return r.team&&r.team.toUpperCase()!=='B2B';});
   var teamFilter=state.dashTeam||'All';
