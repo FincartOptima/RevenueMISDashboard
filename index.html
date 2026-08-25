@@ -75,6 +75,11 @@ label.upload-btn:hover{background:var(--blue-sentinel);color:#fff}
 .filters{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
 .filters label{font-size:10px;font-weight:600;color:var(--subink);text-transform:uppercase;letter-spacing:.08em;margin-right:2px}
 .topbar .spacer{flex:1}
+.last-updated{display:flex;align-items:center;gap:7px;padding:5px 10px;border:1px solid var(--line);white-space:nowrap}
+.last-updated-dot{width:6px;height:6px;border-radius:50%;background:#66BB6A;flex:none}
+.last-updated-dot.stale{background:#EF9A9A}
+.last-updated-label{font-size:9px;font-weight:600;color:var(--subink);text-transform:uppercase;letter-spacing:.1em}
+.last-updated-val{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink)}
 
 @media(max-width:768px){
   .shell{flex-direction:column}
@@ -272,6 +277,11 @@ table.data th.sortable:hover{color:var(--cerulean)}
           </span>
         </div>
         <div class="spacer"></div>
+        <div class="last-updated" id="last-updated" title="">
+          <span class="last-updated-dot" id="last-updated-dot"></span>
+          <span class="last-updated-label">Last Updated</span>
+          <span class="last-updated-val" id="last-updated-val">—</span>
+        </div>
         <label class="upload-btn">Re-upload .xlsb
           <input type="file" id="reupload-file" accept=".xlsb,.xlsx,.xls" style="display:none">
         </label>

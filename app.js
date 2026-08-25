@@ -105,6 +105,33 @@ function pivot(rows,keyFn,valFns){
 function byRev(a,b){return b.rev-a.rev;}
 function sum(arr,fn){return arr.reduce(function(a,r){return a+(fn?fn(r):r);},0);}
 
+/* ─── data freshness (Last Updated badge) ─── */
+function fmtGenerated(d){
+  function p(n){return (n<10?'0':'')+n;}
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+}
+function renderMeta(){
+  var g=DATA.meta&&DATA.meta.generated;
+  var subEl=$('app-subtitle');
+  if(subEl)subEl.textContent=(DATA.meta.source||'')+'  ·  Generated: '+(g||'—');
+
+  var valEl=$('last-updated-val'), dotEl=$('last-updated-dot'), wrapEl=$('last-updated');
+  if(!valEl)return;
+  var d=g?new Date((''+g).replace(' ','T')):null;
+  if(!d||isNaN(d.getTime())){
+    valEl.textContent=g||'—';
+    if(dotEl)dotEl.className='last-updated-dot';
+    return;
+  }
+  var days=Math.floor((new Date()-d)/86400000);
+  var dateStr=d.toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});
+  var timeStr=d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'});
+  var rel=days<=0?'today':(days===1?'yesterday':days+' days ago');
+  valEl.textContent=dateStr+', '+timeStr+' ('+rel+')';
+  if(wrapEl)wrapEl.title='Data extracted '+dateStr+' at '+timeStr;
+  if(dotEl)dotEl.className='last-updated-dot'+(days>35?' stale':'');
+}
+
 /* ─── RM→Team ─── */
 function buildRmTeam(){
   RM2TEAM={};
@@ -2079,7 +2106,6 @@ function parseWorkbook(wb){
   /* PMS — skip rows outside current FY */
   var P=sheet('PMS');
   for(i=1;i<P.length;i++){var pr=P[i];if(!pr||cell(pr,2)==null||cell(pr,2)==='')continue;
-    if((sstr(cell(pr,1))||'').toUpperCase()==='B2B')continue;
     var pmo=sstr(cell(pr,28)); pmo=pmo?titleCase(pmo):'';
     if(pmo&&fyM.indexOf(pmo)<0)continue;
     pmsArr.push({dtype:sstr(cell(pr,1))||'B2C',rm:sstr(cell(pr,2)),client:sstr(cell(pr,3)),
@@ -2141,7 +2167,7 @@ function parseWorkbook(wb){
   var rrYtd=readReport('REVENUE REPORT YTD',{fees:[4,5],insurance:[6,7,8,9,10,11,12],pms:[13,14,15],trail:[16],total:[17]});
 
   return {
-    meta:{source:'(live)',fyMonths:fyM,generated:new Date().toLocaleString(),
+    meta:{source:'(live)',fyMonths:fyM,generated:fmtGenerated(new Date()),
       insRows:ins.length,feesRows:fees.length,pmsRows:pmsArr.length,talkRows:talk.length,revsumRows:revsum.length,revsumMtdMonth:rsMonth},
     ins:ins,fees:fees,pms:pmsArr,
     talk:{months:fyM,rows:talk},
@@ -2185,6 +2211,7 @@ function handleUpload(e){
       });
       DATA=parseWorkbook(wb);
       buildRmTeam(); populateMonthFilter(); state.chartTeam='All';
+      renderMeta();
       renderActive();
     }catch(err){alert('Could not parse file: '+err.message);}
   };
@@ -2232,7 +2259,7 @@ async function boot(){
     buildRmTeam();
     if(ld)ld.style.display='none';
     $('app').style.display='block';
-    renderTabs(); populateMonthFilter(); bindFilters(); setTab('dashboard');
+    renderTabs(); populateMonthFilter(); bindFilters(); renderMeta(); setTab('dashboard');
     return;
   }
 
@@ -2265,6 +2292,7 @@ async function boot(){
   renderTabs();
   populateMonthFilter();
   bindFilters();
+  renderMeta();
   setTab('dashboard');
 }
 if(document.readyState!=='loading')boot(); else document.addEventListener('DOMContentLoaded',boot);

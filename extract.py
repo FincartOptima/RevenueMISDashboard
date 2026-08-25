@@ -3,11 +3,14 @@ import json, os, time, glob, subprocess
 from datetime import datetime, timedelta
 import win32com.client as win32
 
-# Auto-detect the most recently modified .xlsb in this folder
-_xlsb_files = sorted([f for f in glob.glob('*.xlsb') if not os.path.basename(f).startswith('~$')], key=os.path.getmtime, reverse=True)
-if not _xlsb_files:
-    raise FileNotFoundError('No .xlsb file found in this folder. Copy the MIS file here first.')
-SRC = _xlsb_files[0]
+# Auto-detect the most recently modified .xlsb or .xlsx in this folder
+_src_files = sorted(
+    [f for ext in ('*.xlsb', '*.xlsx') for f in glob.glob(ext) if not os.path.basename(f).startswith('~$')],
+    key=os.path.getmtime, reverse=True
+)
+if not _src_files:
+    raise FileNotFoundError('No .xlsb or .xlsx file found in this folder. Copy the MIS file here first.')
+SRC = _src_files[0]
 print(f'Source file: {SRC}', flush=True)
 
 def ser2month(n):
@@ -192,8 +195,6 @@ try:
         if i==0: continue
         def g(ix): return row[ix] if ix<len(row) else None
         if g(2) in (None,''): continue   # RM name blank = truly empty row
-        bt=s(g(1)).upper()
-        if bt=='B2B': continue
         raw_mo=g(28)
         mo=s(raw_mo).title() if raw_mo else ''
         pms_rows.append({
