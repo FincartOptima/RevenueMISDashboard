@@ -19,7 +19,7 @@ var state = {
   talkMonth:'YTD', revsumView:'mtd', revsumTeam:'All',
   insView:'rm', feesView:'rm', pmsView:'rm', talkView:'team',
   talkMetric:'netSale',
-  insMonth:'All', insTeam:'All', insProduct:'All', insPartnerProduct:'All', insMonthlyStatus:'All',
+  insMonth:'All', insTeam:'All', insProduct:'All', insPartnerProduct:'All', insMonthlyStatus:'All', insRenewalType:'All',
   feesMonth:'All', feesTeam:'All', feesProduct:'All',
   pmsMonth:'All', pmsTeam:'All', pmsAssetFilter:'All',
   insSearch:'', feesSearch:'', pmsSearch:'',
@@ -135,7 +135,19 @@ function renderMeta(){
 /* ─── RM→Team ─── */
 function buildRmTeam(){
   RM2TEAM={};
+  /* Talk sheet first (covers B2B-channel RMs and newer joiners not yet
+     in Revenue Summary), then Revenue Summary overrides -- it's the
+     authoritative team mapping used for target-setting, so it wins
+     whenever both sources name the same RM. Every monthly REVSUM
+     snapshot is checked (not just the base one) so a mid-year joiner
+     who's missing from an earlier month still gets mapped. */
   DATA.talk.rows.forEach(function(r){ if(r.name)RM2TEAM[r.name.toLowerCase().trim()]=r.team; });
+  function applyRevsumRows(rows){
+    (rows||[]).forEach(function(r){ if(r.name&&r.team)RM2TEAM[r.name.toLowerCase().trim()]=r.team; });
+  }
+  applyRevsumRows(DATA.revsum.rows);
+  var months=DATA.revsum.months;
+  if(months)Object.keys(months).forEach(function(m){ applyRevsumRows(months[m].rows); });
 }
 function teamOf(rm){ if(!rm)return 'Unassigned'; return RM2TEAM[rm.toLowerCase().trim()]||'Unassigned'; }
 
@@ -151,7 +163,14 @@ function allTeams(){
 
 /* ─── filters ─── */
 function getINS(){
-  return filterByTeam(DATA.ins.filter(function(r){ return state.insMonth==='All'||r.month===state.insMonth; }),state.insTeam);
+  return filterByTeam(DATA.ins.filter(function(r){
+    return (state.insMonth==='All'||r.month===state.insMonth)
+      &&(state.insRenewalType==='All'||r.renewalType===state.insRenewalType);
+  }),state.insTeam);
+}
+function insAllRenewalTypes(){
+  var t={}; (DATA.ins||[]).forEach(function(r){if(r.renewalType&&r.renewalType!=='Unknown')t[r.renewalType]=1;});
+  return Object.keys(t).sort();
 }
 function getFEES(){
   return filterByTeam(DATA.fees.filter(function(r){ return state.feesMonth==='All'||r.month===state.feesMonth; }),state.feesTeam);
@@ -676,6 +695,16 @@ function renderINS(){
   tsel.onchange=function(){state.insTeam=this.value;renderINS();};
   tfg.appendChild(tsel);
   ctrl.appendChild(tfg);
+
+  var rfg=el('div','dash-filter-group');
+  rfg.appendChild(el('label',null,'Renewal Type'));
+  var rsel=el('select');
+  var ro=el('option',null,'All Types');ro.value='All';rsel.appendChild(ro);
+  insAllRenewalTypes().forEach(function(t){var o=el('option',null,t);o.value=t;rsel.appendChild(o);});
+  rsel.value=state.insRenewalType;
+  rsel.onchange=function(){state.insRenewalType=this.value;renderINS();};
+  rfg.appendChild(rsel);
+  ctrl.appendChild(rfg);
   pane.appendChild(ctrl);
 
   var ins=getINS();
@@ -2087,7 +2116,9 @@ function parseWorkbook(wb){
     var mo=sstr(cell(r,48)); if(mo&&fyM.indexOf(mo)<0)continue;
     ins.push({dtype:sstr(cell(r,1))||'B2C',rm:sstr(cell(r,2)),client:sstr(cell(r,3)),
       platform:sstr(cell(r,8))||'Unknown',category:sstr(cell(r,10))||'Unknown',insType:sstr(cell(r,11))||'Unknown',
-      partner:sstr(cell(r,14))||'Unknown',premium:num(cell(r,27)),createDate:serToIsoDate(cell(r,47)),month:mo,confirmed:sstr(cell(r,50)),
+      partner:sstr(cell(r,14))||'Unknown',premium:num(cell(r,27)),createDate:serToIsoDate(cell(r,47)),
+      renewalType:titleCase(sstr(cell(r,28)))||'Unknown',
+      month:mo,confirmed:sstr(cell(r,50)),
       type:sstr(cell(r,51))||'Unknown',revenue:num(cell(r,52)),pct:num(cell(r,54)),
       teamLeader:sstr(cell(r,56)),status:sstr(cell(r,63))||'Unknown'});}
 

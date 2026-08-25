@@ -159,6 +159,7 @@ try:
             'insType':s(g(11)) or 'Unknown',
             'partner':s(g(14)) or 'Unknown',
             'premium':num(g(27)),'createDate':iso_date(g(47)),
+            'renewalType':s(g(28)).title() or 'Unknown',
             'month':s(g(48)),'confirmed':s(g(50)),
             'type':s(g(51)) or 'Unknown','revenue':num(g(52)),
             'pct':num(g(54)),'teamLeader':s(g(56)),
